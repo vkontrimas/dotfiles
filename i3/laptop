@@ -1,0 +1,12 @@
+# Swap caps lock and escape
+exec_always --no-startup-id xmodmap -e "clear lock"
+exec_always --no-startup-id xmodmap -e "keycode 9 = Caps_Lock"
+exec_always --no-startup-id xmodmap -e "keycode 66 = Escape"
+
+# Swap alt and win
+exec_always --no-startup-id xmodmap -e "clear mod1"
+exec_always --no-startup-id xmodmap -e "keycode 64 = Super_L"
+exec_always --no-startup-id xmodmap -e "clear mod5"
+exec_always --no-startup-id xmodmap -e "keycode 108 = Super_L"
+exec_always --no-startup-id xmodmap -e "clear mod4"
+exec_always --no-startup-id xmodmap -e "keycode 133 = Alt_L"
