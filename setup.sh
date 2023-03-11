@@ -1,7 +1,9 @@
 #!/bin/zsh
 
 # i3
-ln -s "$(realpath i3)" -t ~/.config
+I3_CONFIG_DIR="$HOME/.config/i3"
+mkdir -p "$I3_CONFIG_DIR"
+echo "include $(realpath i3/config)\n#include $(realpath i3/laptop)" > "$I3_CONFIG_DIR/config"
 
 # zprezto
 setopt EXTENDED_GLOB
