@@ -2,7 +2,7 @@
 
 launch() {
   # echo $@
-  coproc ( "$@"  > /dev/null  2>1 )
+  coproc ( "$@"  > /dev/null  2>&1 )
 }
 
 case "$@" in
