@@ -21,3 +21,6 @@ done
 
 # nvim
 ln -s "$(realpath nvim)" -t ~/.config
+
+# Xresources
+ln -s "$(realpath x11/Xresources)" "$HOME/.Xresources"
