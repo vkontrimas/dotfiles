@@ -5,9 +5,10 @@
 - rofi
 - rofimoji
 - xss-lock
+- imagemagick
 
 ```
-sudo apt install maim xclip feh rofi xss-lock
+sudo apt install maim xclip feh rofi xss-lock imagemagick
 ```
 
 ```
