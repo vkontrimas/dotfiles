@@ -8,7 +8,7 @@ blurred=/tmp/i3-lock-screenshot-blurred.png
 i3lock_options="--nofork -i $blurred --show-failed-attempts --ignore-empty-password"
 
 maim $unblurred
-convert -filter Point -scale 2.5% -resize 3840x2160\! -blur 0x2 $unblurred $blurred
+convert -filter Point -scale 2.5% -resize 1920x1080\! -blur 0x2 $unblurred $blurred
 rm $unblurred
 
 # We set a trap to kill the locker if we get killed, then start the locker and
