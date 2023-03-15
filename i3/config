@@ -17,7 +17,7 @@ set $font pango:Fira Mono Regular 9
 font $font
 
 # Wallpaper
-exec --no-startup-id feh --bg-scale $HOME/Pictures/.i3_wallpaper.jpg
+exec --no-startup-id feh --bg-scale $HOME/.i3/wallpaper.jpg
 
 # Start XDG autostart .desktop files using dex. See also
 # https://wiki.archlinux.org/index.php/XDG_Autostart
@@ -28,7 +28,7 @@ exec --no-startup-id dex --autostart --environment i3
 
 # xss-lock grabs a logind suspend inhibit lock and will use i3lock to lock the
 # screen before suspend. Use loginctl lock-session to lock your screen.
-exec --no-startup-id xss-lock --transfer-sleep-lock -- "$HOME/.lock.sh"
+exec --no-startup-id xss-lock --transfer-sleep-lock -- "$HOME/.i3/lock.sh"
 
 # NetworkManager is the most popular way to manage wireless networks on Linux,
 # and nm-applet is a desktop environment-independent system tray GUI for it.
@@ -149,7 +149,7 @@ bindsym $mod+Shift+c reload
 bindsym $mod+Shift+r restart
 
 # rofi exit menu
-bindsym $mod+Shift+e exec rofi -show exit -modi "exit:$HOME/.rofi_exit.sh"
+bindsym $mod+Shift+e exec rofi -show exit -modi "exit:$HOME/.i3/rofi_exit.sh"
 # exit i3 (BACKUP)
 bindsym $mod+Ctrl+Shift+e exec "i3-nagbar -t warning -m 'You pressed the exit shortcut. Do you really want to exit i3? This will end your X session.' -B 'Yes, exit i3' 'i3-msg exit'"
 
