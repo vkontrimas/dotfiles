@@ -3,9 +3,14 @@
 - xclip
 - feh
 - rofi
+- rofimoji
 
 ```
 sudo apt install maim xclip feh rofi
+```
+
+```
+pip3 install --user rofimoji
 ```
 
 # Bits and bobs
