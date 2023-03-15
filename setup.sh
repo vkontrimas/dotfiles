@@ -1,8 +1,16 @@
 #!/bin/zsh
 
 # i3
+I3_WALLPAPER_DIR="$HOME/Pictures"
+mkdir -p "$I3_WALLPAPER_DIR"
+ln -s "$(realpath i3/wallpaper.jpg)" "$I3_WALLPAPER_DIR/.i3_wallpaper.jpg"
+
+ln -s "$(realpath i3/lock.sh)" "$HOME/.lock.sh"
+ln -s "$(realpath i3/rofi_exit.sh)" "$HOME/.rofi_exit.sh"
+
 I3_CONFIG_DIR="$HOME/.config/i3"
 mkdir -p "$I3_CONFIG_DIR"
+
 echo "include $(realpath i3/config)\n#include $(realpath i3/laptop)" > "$I3_CONFIG_DIR/config"
 
 # zprezto
