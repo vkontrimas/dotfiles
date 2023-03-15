@@ -16,6 +16,9 @@ set $font pango:Fira Mono Regular 9
 # is used in the bar {} block below.
 font $font
 
+# Wallpaper
+exec --no-startup-id feh --bg-scale $HOME/Pictures/.i3_wallpaper.jpg
+
 # Start XDG autostart .desktop files using dex. See also
 # https://wiki.archlinux.org/index.php/XDG_Autostart
 exec --no-startup-id dex --autostart --environment i3

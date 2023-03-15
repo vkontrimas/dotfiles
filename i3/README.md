@@ -1,8 +1,12 @@
 # Deps
 - maim
 - xclip
+- feh
 
 # Bits and bobs
+## Wallpaper
+[sourced from here](https://wall.alphacoders.com/big.php?i=110966)
+
 ## Configuring trackpad
 ```
 xinput
