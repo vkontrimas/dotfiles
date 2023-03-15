@@ -4,6 +4,12 @@ Plug 'morhetz/gruvbox'
 Plug 'junegunn/fzf.vim'
 Plug 'junegunn/fzf'
 Plug 'rhysd/vim-clang-format'
+
+" JS
+Plug 'pangloss/vim-javascript'
+Plug 'leafgarland/typescript-vim'
+Plug 'MaxMEllon/vim-jsx-pretty'
+Plug 'jparise/vim-graphql'
 call plug#end()
 
 colorscheme gruvbox
@@ -28,5 +34,5 @@ nnoremap <leader>r :Rg<CR>
 nnoremap <leader>t :BLines<CR>
 nnoremap <leader>g :Buffers<CR>
 
-let g:clang_format#auto_format = 1
-nmap <Leader>C :ClangFormatAutoToggle<CR>
+let g:clang_format#auto_format = 0
+" nmap <Leader>C :ClangFormatAutoToggle<CR>
