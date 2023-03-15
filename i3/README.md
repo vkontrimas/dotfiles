@@ -4,9 +4,10 @@
 - feh
 - rofi
 - rofimoji
+- xss-lock
 
 ```
-sudo apt install maim xclip feh rofi
+sudo apt install maim xclip feh rofi xss-lock
 ```
 
 ```
