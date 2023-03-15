@@ -1,0 +1,3 @@
+# Deps
+- maim
+- xclip
