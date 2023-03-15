@@ -1,17 +1,13 @@
 #!/bin/zsh
 
 # i3
-I3_WALLPAPER_DIR="$HOME/Pictures"
-mkdir -p "$I3_WALLPAPER_DIR"
-ln -s "$(realpath i3/wallpaper.jpg)" "$I3_WALLPAPER_DIR/.i3_wallpaper.jpg"
-
-ln -s "$(realpath i3/lock.sh)" "$HOME/.lock.sh"
-ln -s "$(realpath i3/rofi_exit.sh)" "$HOME/.rofi_exit.sh"
-
-I3_CONFIG_DIR="$HOME/.config/i3"
-mkdir -p "$I3_CONFIG_DIR"
-
-echo "include $(realpath i3/config)\n#include $(realpath i3/laptop)" > "$I3_CONFIG_DIR/config"
+i3_dir="$HOME/.i3"
+if [ ! -d $i3_dir ]
+then
+  ln -s "$(realpath i3)" $i3_dir
+else
+  echo $i3_dir already exists!
+fi
 
 # zprezto
 setopt EXTENDED_GLOB
@@ -20,7 +16,7 @@ for rcfile in zprezto/runcoms/^README.md(.N); do
 done
 
 # nvim
-ln -s "$(realpath nvim)" -t ~/.config
+ln -s "$(realpath nvim)" -t "$HOME/.config"
 
 # Xresources
 ln -s "$(realpath x11/Xresources)" "$HOME/.Xresources"

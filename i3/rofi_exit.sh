@@ -16,7 +16,7 @@ case "$@" in
     launch systemctl suspend
     ;;
   "lock")
-    launch $HOME/.lock.sh
+    launch $HOME/.i3/lock.sh
     ;;
   "exit")
     launch i3-msg exit
