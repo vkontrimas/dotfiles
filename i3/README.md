@@ -2,6 +2,11 @@
 - maim
 - xclip
 - feh
+- rofi
+
+```
+sudo apt install maim xclip feh rofi
+```
 
 # Bits and bobs
 ## Wallpaper
