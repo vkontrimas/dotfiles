@@ -21,3 +21,7 @@ export FZF_DEFAULT_COMMAND='rg --files'
 # fnm
 export PATH="/home/vkon/.local/share/fnm:$PATH"
 eval "`fnm env`"
+
+# fnm
+export PATH="/home/vkon/.local/share/fnm:$PATH"
+eval "`fnm env`"
