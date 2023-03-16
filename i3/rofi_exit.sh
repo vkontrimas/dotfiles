@@ -6,27 +6,27 @@ launch() {
 }
 
 case "$@" in
-  "shutdown")
+  'shutdown')
     launch shutdown now
     ;;
-  "restart")
+  'restart')
     launch shutdown now -r
     ;;
-  "sleep")
+  'sleep (suspend)')
     launch systemctl suspend
     ;;
-  "lock")
+  'lock')
     launch $HOME/.i3/lock.sh
     ;;
-  "exit")
+  'exit')
     launch i3-msg exit
     ;;
   *)
-    echo "lock"
-    echo "exit"
-    echo "sleep"
-    echo "shutdown"
-    echo "restart"
+    echo 'lock'
+    echo 'exit'
+    echo 'sleep (suspend)'
+    echo 'shutdown'
+    echo 'restart'
     ;;
 esac
 
