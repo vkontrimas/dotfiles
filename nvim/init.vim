@@ -22,6 +22,8 @@ set shiftwidth=2
 set expandtab
 set foldcolumn=2
 
+set colorcolumn=80,120
+
 nnoremap <leader>h <C-W>h
 nnoremap <leader>j <C-W>j
 nnoremap <leader>k <C-W>k
