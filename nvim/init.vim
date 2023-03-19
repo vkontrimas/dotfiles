@@ -1,6 +1,7 @@
 call plug#begin('~/.config/nvim/plugged')
+Plug 'ayu-theme/ayu-vim'
+
 Plug 'tpope/vim-surround'
-Plug 'morhetz/gruvbox'
 Plug 'junegunn/fzf.vim'
 Plug 'junegunn/fzf'
 Plug 'rhysd/vim-clang-format'
@@ -12,7 +13,9 @@ Plug 'MaxMEllon/vim-jsx-pretty'
 Plug 'jparise/vim-graphql'
 call plug#end()
 
-colorscheme gruvbox
+set termguicolors
+let ayucolor='dark'
+colorscheme ayu
 
 set nu
 set rnu
