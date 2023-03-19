@@ -26,3 +26,6 @@ ln -s "$(realpath gtk/settings.ini)" "$HOME/.config/gtk-3.0/settings.ini"
 
 # alacritty
 ln -s "$(realpath alacritty)" -t "$HOME/.config"
+
+# fontconfig
+ln -s "$(realpath fontconfig)" -t "$HOME/.config"
