@@ -23,3 +23,6 @@ ln -s "$(realpath x11/Xresources)" "$HOME/.Xresources"
 
 # GTK
 ln -s "$(realpath gtk/settings.ini)" "$HOME/.config/gtk-3.0/settings.ini"
+
+# alacritty
+ln -s "$(realpath alacritty)" -t "$HOME/.config"
