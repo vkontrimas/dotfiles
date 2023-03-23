@@ -6,6 +6,8 @@ Plug 'junegunn/fzf.vim'
 Plug 'junegunn/fzf'
 Plug 'rhysd/vim-clang-format'
 
+Plug 'tikhomirov/vim-glsl'
+
 " JS
 Plug 'pangloss/vim-javascript'
 Plug 'leafgarland/typescript-vim'
