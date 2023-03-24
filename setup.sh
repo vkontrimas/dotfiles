@@ -29,3 +29,7 @@ ln -s "$(realpath alacritty)" -t "$HOME/.config"
 
 # fontconfig
 ln -s "$(realpath fontconfig)" -t "$HOME/.config"
+
+# set up git aliases
+git config --global alias.st status
+git config --global alias.amend "commit --amend"
