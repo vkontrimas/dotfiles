@@ -232,3 +232,6 @@ exec_always --no-startup-id xinput set-prop 11 338 1
 # Enable natural scroll
 exec_always --no-startup-id xinput set-prop 11 316 1
 exec_always --no-startup-id xinput set-prop 11 317 1
+
+bindsym XF86MonBrightnessUp exec --no-startup-id brightnessctl set +10%
+bindsym XF86MonBrightnessDown exec --no-startup-id brightnessctl set 10%-
