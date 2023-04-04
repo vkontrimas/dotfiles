@@ -18,3 +18,23 @@ eval "`fnm env`"
 # flyctl
 export FLYCTL_INSTALL="/home/$USER/.fly"
 export PATH="$FLYCTL_INSTALL/bin:$PATH"
+
+# Fancy function to make intermdiate directories and touch a file
+function c() {
+  if [[ $# -ne 1 ]]; then
+    echo "Usage: t /path/to/file"
+    echo "Creates an empty file and any intermediate directories if they don't already exist."
+    return 1
+  fi
+
+  local destfile=$1
+  local destdir="$(dirname $destfile)"
+
+  if [ -e "$destfile" ]; then
+    echo "Destination path already exists." >&2
+    return 2
+  else
+    mkdir -p "$(dirname "$1")" && touch "$1"
+  fi
+}
+
