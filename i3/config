@@ -190,6 +190,7 @@ mode "screenshot" {
   bindsym Ctrl+s exec --no-startup-id maim --select "$HOME/Pictures/$(date).png"; mode "default"
 
   bindsym Escape mode "default"
+  bindsym Return mode "default"
 }
 
 bindsym Print mode "screenshot"
@@ -200,6 +201,15 @@ bindsym $mod+Shift+b exec rofimoji -a type
 # scratchpad magic
 bindsym $mod+u scratchpad show
 bindsym $mod+shift+u move scratchpad
+
+# set up layouts
+mode "layout" {
+  bindsym w exec --no-startup-id "$HOME/.i3/layouts/set_webdev.sh"; mode "default"
+
+  bindsym Escape mode "default"
+  bindsym Return mode "default"
+}
+bindsym $mod+i mode "layout"
 
 # Start i3bar to display a workspace bar (plus the system information i3status
 # finds out, if available)
