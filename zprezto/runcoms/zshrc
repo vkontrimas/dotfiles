@@ -22,13 +22,20 @@ export PATH="$FLYCTL_INSTALL/bin:$PATH"
 # Fancy function to make intermdiate directories and touch a file
 function mkdir_and_touch_file() {
   local destfile=$1
-  local destdir="$(dirname $destfile)"
 
-  if [ -e "$destfile" ]; then
-    echo "'$destfile' already exists." >&2
-    return 2
+  if [[ $destfile == */ ]]; then
+    # If directory, just make a directory
+    mkdir -p $destfile
   else
-    mkdir -p "$(dirname "$1")" && touch "$1"
+    # Else, make parent dir and touch file
+    local destdir="$(dirname $destfile)"
+
+    if [ -e "$destfile" ]; then
+      echo "'$destfile' already exists." >&2
+      return 2
+    else
+      mkdir -p "$(dirname "$1")" && touch "$1"
+    fi
   fi
 }
 
