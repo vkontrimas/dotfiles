@@ -20,21 +20,27 @@ export FLYCTL_INSTALL="/home/$USER/.fly"
 export PATH="$FLYCTL_INSTALL/bin:$PATH"
 
 # Fancy function to make intermdiate directories and touch a file
-function c() {
-  if [[ $# -ne 1 ]]; then
-    echo "Usage: t /path/to/file"
-    echo "Creates an empty file and any intermediate directories if they don't already exist."
-    return 1
-  fi
-
+function mkdir_and_touch_file() {
   local destfile=$1
   local destdir="$(dirname $destfile)"
 
   if [ -e "$destfile" ]; then
-    echo "Destination path already exists." >&2
+    echo "'$destfile' already exists." >&2
     return 2
   else
     mkdir -p "$(dirname "$1")" && touch "$1"
   fi
 }
 
+function c() {
+  if [[ $# -eq 0 ]]; then
+    echo "Usage: c <path> [extra paths...]"
+    echo "Creates an empty file and any intermediate directories at any of the given paths."
+    return 1
+  fi
+
+  for new_file in "$@"
+  do
+    mkdir_and_touch_file $new_file
+  done
+}
