@@ -35,3 +35,6 @@ git config --global alias.st status
 git config --global alias.amend "commit --amend"
 git config --global alias.ll 'log'
 git config --global alias.l '!git --no-pager log --oneline -20'
+git config --global alias.c 'commit'
+git config --global alias.a 'commit --amend'
+git config --global alias.af 'commit --amend --no-edit'
