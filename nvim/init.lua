@@ -33,3 +33,46 @@ vim.api.nvim_set_keymap('n', '<leader>g', ':Buffers<CR>', { noremap = true })
 -- Plugin-Specific Settings
 -- vim.g.clang_format#auto_format = 0
 -- vim.api.nvim_set_keymap('n', '<Leader>C', ':ClangFormatAutoToggle<CR>', { noremap = true })
+
+-- Enable Tree-sitter
+require('nvim-treesitter.configs').setup {
+  ensure_installed = {
+    'lua',
+    'bash',
+    'c',
+    'cpp',
+    'comment',
+    'cmake',
+    'css',
+    'javascript',
+    'typescript',
+    'dockerfile',
+    'git_rebase',
+    'gitcommit',
+    'gitignore',
+    'graphql',
+    'java',
+    'kotlin',
+    'json',
+    'kotlin',
+    'markdown',
+    'make',
+    'ninja',
+    'objc',
+    'php',
+    'proto',
+    'python',
+    'rust',
+    'scala',
+    'scss',
+    'sql',
+    'starlark',
+    'swift',
+    'yaml',
+    'toml'
+  },
+  auto_install = true,
+  highlight = {
+    enable = true,
+  },
+}
