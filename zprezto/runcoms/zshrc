@@ -7,17 +7,8 @@ fi
 bindkey -v
 
 alias vim=nvim
-alias fd=fdfind
 
 export FZF_DEFAULT_COMMAND='rg --files'
-
-# fnm
-export PATH="/home/$USER/.local/share/fnm:$PATH"
-eval "`fnm env`"
-
-# flyctl
-export FLYCTL_INSTALL="/home/$USER/.fly"
-export PATH="$FLYCTL_INSTALL/bin:$PATH"
 
 # Fancy function to make intermdiate directories and touch a file
 function mkdir_and_touch_file() {
