@@ -1,18 +1,9 @@
 call plug#begin('~/.config/nvim/plugged')
 Plug 'ayu-theme/ayu-vim'
-
 Plug 'tpope/vim-surround'
 Plug 'junegunn/fzf.vim'
 Plug 'junegunn/fzf'
-Plug 'rhysd/vim-clang-format'
-
-Plug 'tikhomirov/vim-glsl'
-
-" JS
-Plug 'pangloss/vim-javascript'
-Plug 'leafgarland/typescript-vim'
-Plug 'MaxMEllon/vim-jsx-pretty'
-Plug 'jparise/vim-graphql'
+Plug 'nvim-treesitter/nvim-treesitter', {'do': ':TSUpdate'}
 call plug#end()
 
 set termguicolors
