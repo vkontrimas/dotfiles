@@ -75,8 +75,9 @@ require('nvim-treesitter.configs').setup {
   highlight = {
     enable = true,
     additional_vim_regex_highlighting = false,
-    custom_captures = {
-      ['<identifier>'] = 'Normal',
-    },
   },
 }
+
+-- Filetypes
+vim.cmd[[au BufRead,BufNewFile *.gltf set filetype=json]]
+
