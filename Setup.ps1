@@ -174,6 +174,7 @@ function setup-links-elevated {
     
     link-dir "alacritty" "$env:APPDATA\alacritty"
     link-dir "nvim" "$env:LOCALAPPDATA\nvim"
+    link-dir "nu" "$env:APPDATA\nushell"
 }
 
 
