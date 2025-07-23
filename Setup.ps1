@@ -177,6 +177,24 @@ function setup-links-elevated {
     link-dir "nu" "$env:APPDATA\nushell"
 }
 
+function setup-node {
+    Write-Host "--- Setting up Node.js with fnm ---"
+    
+    # Initialize fnm environment
+    Write-Host "- Initializing fnm environment..."
+    fnm env --use-on-cd | Out-String | Invoke-Expression
+    
+    # Install latest LTS Node.js
+    Write-Host "- Installing latest LTS Node.js..."
+    fnm install --lts
+    fnm use lts-latest
+    fnm default lts-latest
+    
+    Write-Host "- Node.js setup complete!"
+    node --version
+    npm --version
+}
+
 
 # Handle elevated execution with parameters
 if ($Action -eq "--elevated-tasks") {
@@ -191,6 +209,7 @@ else {
     install-scoop
     install-deps
     upgrade-scoop
+    setup-node
     setup-alacritty-context-menu
     run-elevated-tasks
 }
