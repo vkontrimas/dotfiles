@@ -1,0 +1,20 @@
+[general]
+live_config_reload = true
+working_directory = "%USERPROFILE%"
+import = ["ayu_dark.toml"]
+
+[terminal]
+shell = "nu"
+
+[window]
+title = "Term"
+opacity = 0.85
+# decorations = "None"
+# dimensions = { columns = 120, lines = 200 }
+padding = { x = 10, y = 10 }
+
+[font]
+normal = { family = "Hurmit Nerd Font Mono", style = "Regular" }
+size = 11
+# offset = { x = 1, y = 0 }
+
