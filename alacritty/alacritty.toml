@@ -10,11 +10,11 @@ shell = "nu"
 title = "Term"
 opacity = 0.85
 # decorations = "None"
-# dimensions = { columns = 120, lines = 200 }
-padding = { x = 10, y = 10 }
+dimensions = { columns = 120, lines = 40 }
+padding = { x = 15, y = 15 }
 
 [font]
 normal = { family = "Hurmit Nerd Font Mono", style = "Regular" }
 size = 11
-# offset = { x = 1, y = 0 }
+offset = { x = 1, y = 0 }
 
