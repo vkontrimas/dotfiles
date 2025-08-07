@@ -33,7 +33,7 @@ if not (which fnm | is-empty) {
 
 alias tree = tre
 
-alias fcd = cd (fzf -t d | fzf)
+alias fcd = cd (fd -t d | fzf)
 
 def __dirs_index_fzf [] {
     # Returns index selected via fzf
