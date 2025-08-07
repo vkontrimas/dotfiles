@@ -17,6 +17,8 @@
 # You can remove these comments if you want or leave
 # them for future reference.
 
+use std/dirs
+
 if not (which fnm | is-empty) {
     ^fnm env --json | from json | load-env
 
@@ -28,3 +30,16 @@ if not (which fnm | is-empty) {
         }
     )
 }
+
+alias tree = tre
+
+alias fcd = cd (fzf -t d | fzf)
+
+def __dirs_index_fzf [] {
+    # Returns index selected via fzf
+    let selected_path = dirs | get path | str join "\n" | fzf
+    let selected_index = dirs | enumerate | flatten | where path == $selected_path | get index | first
+    $selected_index
+}
+alias fdir = dirs goto (__dirs_index_fzf)
+
