@@ -227,6 +227,12 @@ require("lazy").setup({
         event = "InsertEnter",
         config = true,
     },
+    {
+        'nmac427/guess-indent.nvim',
+        config = function()
+          require('guess-indent').setup {}
+        end,
+    },
   },
   -- Configure any other settings here. See the documentation for more details.
   -- colorscheme that will be used when installing plugins.
