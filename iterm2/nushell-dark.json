@@ -8,8 +8,8 @@
       "Command": "/opt/homebrew/bin/nu",
       "Custom Command": "Yes",
       "Terminal Type": "xterm-256color",
-      "Normal Font": "Hurmit Nerd Font Mono 11",
-      "Non Ascii Font": "Hurmit Nerd Font Mono 11",
+      "Normal Font": "HurmitNFM-Regular 11",
+      "Non Ascii Font": "HurmitNFM-Regular 11",
       "Window Type": 0,
       "Transparency": 0.15,
       "Background Color": {
