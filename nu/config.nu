@@ -58,7 +58,7 @@ if $nu.os-info.name == 'windows' {
                 let value = ($parts | get 1)
                 
                 match $name {
-                    "PATH" => { $env.PATH = ($value | split row ";" | where ($it | str length) > 0) },
+                    "PATH" | "Path" => { $env.PATH = ($value | split row ";" | where ($it | str length) > 0) },
                     "INCLUDE" => { $env.INCLUDE = $value },
                     "LIB" => { $env.LIB = $value },
                     _ => {}
