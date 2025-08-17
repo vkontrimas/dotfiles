@@ -9,7 +9,6 @@ shell = "nu"
 [window]
 title = "Term"
 opacity = 0.85
-# decorations = "None"
 dimensions = { columns = 120, lines = 40 }
 padding = { x = 15, y = 15 }
 

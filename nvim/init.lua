@@ -136,7 +136,7 @@ require("lazy").setup({
           { "<leader>s", "<cmd>FzfLua lsp_live_workspace_symbols<cr>", desc = "Fuzzy symbols" },
           { "<leader>c", "<cmd>FzfLua lsp_incoming_calls<cr>", desc = "Fuzzy incoming calls" },
           { "<leader>C", "<cmd>FzfLua lsp_outgoing_calls<cr>", desc = "Fuzzy outgoing calls" },
-          { "<leader>df", "<cmd>FzfLua lsp_document_diagnostics<cr>", desc = "Fuzzy outgoing calls" },
+          { "<leader>dr", "<cmd>FzfLua lsp_document_diagnostics<cr>", desc = "Fuzzy diagnostics" },
         }
     },
     {
@@ -217,6 +217,7 @@ require("lazy").setup({
                  vim.keymap.set('n', 'gd', vim.lsp.buf.definition, {noremap = true, silent = true})
                  vim.keymap.set('n', 'gD', vim.lsp.buf.declaration, {noremap = true, silent = true})
                  vim.keymap.set('n', '<leader>dd', vim.diagnostic.open_float, {noremap = true, silent = true})
+                 vim.keymap.set('n', '<leader>df', vim.lsp.buf.code_action, {noremap = true, silent = true})
                  vim.keymap.set('n', '<leader>h', ":LspClangdSwitchSourceHeader <CR>", {noremap = true, silent = true})
              end,
          })           
@@ -228,10 +229,10 @@ require("lazy").setup({
         config = true,
     },
     {
-        'nmac427/guess-indent.nvim',
-        config = function()
-          require('guess-indent').setup {}
-        end,
+      'nmac427/guess-indent.nvim',
+      config = function()
+        require('guess-indent').setup {}
+      end,
     },
   },
   -- Configure any other settings here. See the documentation for more details.
