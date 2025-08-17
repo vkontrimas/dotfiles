@@ -30,6 +30,10 @@ if $nu.os-info.name == 'macos' {
                 load-env {($var.name): ($var.value)}
             }
         }
+        
+        # Add Homebrew bin paths to PATH
+        let homebrew_prefix = if ($nu.os-info.arch == 'aarch64') { '/opt/homebrew' } else { '/usr/local' }
+        $env.PATH = $env.PATH | prepend [$"($homebrew_prefix)/bin", $"($homebrew_prefix)/sbin"]
     }
 }
 
