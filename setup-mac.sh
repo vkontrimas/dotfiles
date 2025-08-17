@@ -68,6 +68,8 @@ install_deps() {
         bat \
         fzf \
         ripgrep \
+        tre-command \
+        git-delta \
         neovim \
         nushell \
         font-hurmit-nerd-font

@@ -47,6 +47,8 @@ function install-deps {
         "bat"
         "fzf"
         "ripgrep"
+        "tre-command"
+        "delta"
 
         "alacritty"
         "neovim"
