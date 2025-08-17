@@ -195,6 +195,23 @@ function setup-node {
     npm --version
 }
 
+function setup-claude-code {
+    Write-Host "--- Installing Claude Code ---"
+    
+    # Check if Claude Code is already installed
+    if (Get-Command claude -ErrorAction SilentlyContinue) {
+        Write-Host "- Claude Code already installed, skipping"
+        return
+    }
+    
+    # Install Claude Code via npm
+    Write-Host "- Installing Claude Code via npm..."
+    npm install -g @anthropic/claude-code
+    
+    Write-Host "- Claude Code installation complete!"
+    claude --version
+}
+
 
 # Handle elevated execution with parameters
 if ($Action -eq "--elevated-tasks") {
@@ -210,6 +227,7 @@ else {
     install-deps
     upgrade-scoop
     setup-node
+    setup-claude-code
     setup-alacritty-context-menu
     run-elevated-tasks
 }

@@ -130,6 +130,23 @@ setup_node() {
     npm --version
 }
 
+setup_claude_code() {
+    echo -e "${BLUE}--- Installing Claude Code ---${NC}"
+    
+    # Check if Claude Code is already installed
+    if command -v claude &> /dev/null; then
+        echo -e "${GREEN}- Claude Code already installed, skipping${NC}"
+        return
+    fi
+    
+    # Install Claude Code via npm
+    echo -e "- Installing Claude Code via npm..."
+    npm install -g @anthropic/claude-code
+    
+    echo -e "${GREEN}- Claude Code installation complete!${NC}"
+    claude --version
+}
+
 upgrade_homebrew() {
     echo -e "${BLUE}--- Upgrading Homebrew and Packages ---${NC}"
     
@@ -160,6 +177,7 @@ main() {
     install_iterm2
     upgrade_homebrew
     setup_node
+    setup_claude_code
     setup_links
     show_post_install_notes
 }
