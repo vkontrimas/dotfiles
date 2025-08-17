@@ -100,6 +100,19 @@ link_dir() {
     ln -sf "$full_source" "$destination"
 }
 
+setup_git() {
+    echo -e "${BLUE}--- Setting up Git configuration ---${NC}"
+    
+    # Add include directive to global gitconfig if not already present
+    if ! git config --global --get-all include.path | grep -q "dotfiles/git/gitconfig"; then
+        echo -e "- Adding dotfiles git config include..."
+        git config --global include.path ~/dotfiles/git/gitconfig
+        echo -e "${GREEN}- Git configuration setup complete!${NC}"
+    else
+        echo -e "${GREEN}- Git configuration already setup, skipping${NC}"
+    fi
+}
+
 setup_links() {
     echo -e "${BLUE}--- Linking dotfiles ---${NC}"
     
@@ -178,6 +191,7 @@ main() {
     upgrade_homebrew
     setup_node
     setup_claude_code
+    setup_git
     setup_links
     show_post_install_notes
 }

@@ -2,13 +2,28 @@ param(
     [string]$Action
 )
 
+# Colors for output
+$script:RED = "`e[31m"
+$script:GREEN = "`e[32m" 
+$script:YELLOW = "`e[33m"
+$script:BLUE = "`e[34m"
+$script:NC = "`e[0m" # No Color
+
+function Write-ColorHost {
+    param(
+        [string]$Message,
+        [string]$Color = $script:NC
+    )
+    Write-Host "${Color}${Message}${script:NC}"
+}
+
 function prompt-user {
     param(
         [string]$Message
     )
     
     do {
-        $response = Read-Host "$Message (y/n)"
+        $response = Read-Host "${script:YELLOW}$Message (y/n): ${script:NC}"
         $response = $response.ToLower()
     } while ($response -ne "y" -and $response -ne "n")
     
@@ -17,17 +32,17 @@ function prompt-user {
 
 function install-scoop {
     if (Get-Command scoop -ErrorAction SilentlyContinue) {
-        Write-Host "--- Scoop already installed, skipping ---"
+        Write-ColorHost "--- Scoop already installed, skipping ---" $script:GREEN
         return
     }
     
-    Write-Host "--- Installing Scoop ---"
+    Write-ColorHost "--- Installing Scoop ---" $script:BLUE
     Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
     Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression
 }
 
 function install-deps {
-    Write-Host "--- Installing Dependencies ---"
+    Write-ColorHost "--- Installing Dependencies ---" $script:BLUE
     scoop bucket add extras
     scoop install @(
         "fnm"
@@ -45,33 +60,33 @@ function install-deps {
 }
 
 function setup-alacritty-context-menu {
-    Write-Host "--- Setting up Alacritty Context Menu ---"
+    Write-ColorHost "--- Setting up Alacritty Context Menu ---" $script:BLUE
     
     $regFile = "$env:USERPROFILE\scoop\apps\alacritty\current\install-context.reg"
     
     if (Test-Path $regFile) {
         Write-Host "- Importing Alacritty context menu registry entries..."
         reg import $regFile
-        Write-Host "- Alacritty context menu setup complete!"
+        Write-ColorHost "- Alacritty context menu setup complete!" $script:GREEN
     } else {
         Write-Host "- Registry file not found: $regFile"
-        Write-Host "- Skipping context menu setup"
+        Write-ColorHost "- Skipping context menu setup" $script:YELLOW
     }
 }
 
 function install-fonts-elevated {
-    Write-Host "--- Installing Hermit Nerd Font ---"
+    Write-ColorHost "--- Installing Hermit Nerd Font ---" $script:BLUE
     
     # Check if Hermit fonts are already installed
     $fontsPath = "$env:WINDIR\Fonts"
     $hermitFonts = Get-ChildItem -Path $fontsPath -Filter "*Hermit*" -ErrorAction SilentlyContinue
     
     if ($hermitFonts.Count -gt 0) {
-        Write-Host "- Hermit fonts already installed:"
-        $hermitFonts | ForEach-Object { Write-Host "  $($_.Name)" }
+        Write-ColorHost "- Hermit fonts already installed:" $script:GREEN
+        $hermitFonts | ForEach-Object { Write-ColorHost "  $($_.Name)" $script:GREEN }
         
         if (!(prompt-user "Do you want to reinstall the fonts?")) {
-            Write-Host "- Skipping font installation"
+            Write-ColorHost "- Skipping font installation" $script:YELLOW
             return
         }
     }
@@ -114,11 +129,11 @@ function install-fonts-elevated {
     Write-Host "- Cleaning up..."
     Remove-Item -Path $tempDir -Recurse -Force
     
-    Write-Host "- Hermit Nerd Font installation complete!"
+    Write-ColorHost "- Hermit Nerd Font installation complete!" $script:GREEN
 }
 
 function run-elevated-tasks {
-    Write-Host "--- Running Elevated Tasks ---"
+    Write-ColorHost "--- Running Elevated Tasks ---" $script:BLUE
     
     # Launch elevated PowerShell for both font installation and linking
     $dotfilesDir = $PSScriptRoot
@@ -128,7 +143,7 @@ function run-elevated-tasks {
 }
 
 function upgrade-scoop {
-    Write-Host "--- Upgrading Scoop and Packages ---"
+    Write-ColorHost "--- Upgrading Scoop and Packages ---" $script:BLUE
     
     # Update scoop itself
     Write-Host "- Updating scoop..."
@@ -138,7 +153,7 @@ function upgrade-scoop {
     Write-Host "- Updating installed packages..."
     scoop update *
     
-    Write-Host "- Scoop upgrade complete!"
+    Write-ColorHost "- Scoop upgrade complete!" $script:GREEN
 }
 
 function link-dir {
@@ -152,25 +167,40 @@ function link-dir {
     $fullSource = Join-Path $dotfilesDir $Source
     
     $dirName = Split-Path $fullSource -Leaf
-    Write-Host "--- Linking $dirName ---"
+    Write-ColorHost "--- Linking $dirName ---" $script:BLUE
     
     if (Test-Path $Destination) {
-        Write-Host "- Link already exists: $Destination, skipping"
+        Write-ColorHost "- Symlink already exists: $Destination, skipping" $script:GREEN
         return
     }
     
     $destinationDir = Split-Path $Destination -Parent
     if (!(Test-Path $destinationDir)) {
-        Write-Host "--- Creating directory: $destinationDir ---"
+        Write-ColorHost "--- Creating directory: $destinationDir ---" $script:BLUE
         New-Item -ItemType Directory -Path $destinationDir -Force | Out-Null
     }
     
-    Write-Host "--- Creating symlink: $fullSource -> $Destination ---"
+    Write-ColorHost "--- Creating symlink: $fullSource -> $Destination ---" $script:BLUE
     New-Item -ItemType SymbolicLink -Path $Destination -Target $fullSource | Out-Null
 }
 
+function setup-git {
+    Write-ColorHost "--- Setting up Git configuration ---" $script:BLUE
+    
+    # Add include directive to global gitconfig if not already present
+    $includeCheck = git config --global --get-all include.path | Where-Object { $_ -like "*dotfiles/git/gitconfig*" }
+    
+    if (!$includeCheck) {
+        Write-Host "- Adding dotfiles git config include..."
+        git config --global include.path "~/dotfiles/git/gitconfig"
+        Write-ColorHost "- Git configuration setup complete!" $script:GREEN
+    } else {
+        Write-ColorHost "- Git configuration already setup, skipping" $script:GREEN
+    }
+}
+
 function setup-links-elevated {
-    Write-Host "--- Linking dotfiles ---"
+    Write-ColorHost "--- Linking dotfiles ---" $script:BLUE
     
     link-dir "alacritty" "$env:APPDATA\alacritty"
     link-dir "nvim" "$env:LOCALAPPDATA\nvim"
@@ -178,7 +208,7 @@ function setup-links-elevated {
 }
 
 function setup-node {
-    Write-Host "--- Setting up Node.js with fnm ---"
+    Write-ColorHost "--- Setting up Node.js with fnm ---" $script:BLUE
     
     # Initialize fnm environment
     Write-Host "- Initializing fnm environment..."
@@ -190,17 +220,17 @@ function setup-node {
     fnm use lts-latest
     fnm default lts-latest
     
-    Write-Host "- Node.js setup complete!"
+    Write-ColorHost "- Node.js setup complete!" $script:GREEN
     node --version
     npm --version
 }
 
 function setup-claude-code {
-    Write-Host "--- Installing Claude Code ---"
+    Write-ColorHost "--- Installing Claude Code ---" $script:BLUE
     
     # Check if Claude Code is already installed
     if (Get-Command claude -ErrorAction SilentlyContinue) {
-        Write-Host "- Claude Code already installed, skipping"
+        Write-ColorHost "- Claude Code already installed, skipping" $script:GREEN
         return
     }
     
@@ -208,7 +238,7 @@ function setup-claude-code {
     Write-Host "- Installing Claude Code via npm..."
     npm install -g @anthropic/claude-code
     
-    Write-Host "- Claude Code installation complete!"
+    Write-ColorHost "- Claude Code installation complete!" $script:GREEN
     claude --version
 }
 
@@ -223,11 +253,14 @@ if ($Action -eq "--elevated-tasks") {
 }
 else {
     # Normal execution - run all steps
+    Write-ColorHost "=== Windows Dotfiles Setup ===" $script:GREEN
+    
     install-scoop
     install-deps
     upgrade-scoop
     setup-node
     setup-claude-code
+    setup-git
     setup-alacritty-context-menu
     run-elevated-tasks
 }
