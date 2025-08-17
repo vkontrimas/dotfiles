@@ -173,7 +173,7 @@ setup_claude_code() {
     
     # Install Claude Code via npm
     echo -e "- Installing Claude Code via npm..."
-    npm install -g @anthropic/claude-code
+    npm install -g '@anthropic-ai/claude-code'
     
     echo -e "${GREEN}- Claude Code installation complete!${NC}"
     claude --version

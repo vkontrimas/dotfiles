@@ -241,7 +241,7 @@ function setup-claude-code {
     
     # Install Claude Code via npm
     Write-Host "- Installing Claude Code via npm..."
-    npm install -g @anthropic/claude-code
+    npm install -g '@anthropic-ai/claude-code'
     
     Write-ColorHost "- Claude Code installation complete!" "Green"
     claude --version
