@@ -37,6 +37,12 @@ if $nu.os-info.name == 'macos' {
     }
 }
 
+# Add Rust/Cargo bin directory to PATH
+let cargo_bin = $"($env.HOME)/.cargo/bin"
+if ($cargo_bin | path exists) {
+    $env.PATH = $env.PATH | prepend $cargo_bin
+}
+
 if not (which fnm | is-empty) {
     ^fnm env --json | from json | load-env
 
