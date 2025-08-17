@@ -1,20 +1,14 @@
 param(
-    [string]$Action
+    [string]$Action,
+    [switch]$Force
 )
-
-# Colors for output
-$script:RED = "`e[31m"
-$script:GREEN = "`e[32m" 
-$script:YELLOW = "`e[33m"
-$script:BLUE = "`e[34m"
-$script:NC = "`e[0m" # No Color
 
 function Write-ColorHost {
     param(
         [string]$Message,
-        [string]$Color = $script:NC
+        [string]$Color = "White"
     )
-    Write-Host "${Color}${Message}${script:NC}"
+    Write-Host $Message -ForegroundColor $Color
 }
 
 function prompt-user {
@@ -23,7 +17,8 @@ function prompt-user {
     )
     
     do {
-        $response = Read-Host "${script:YELLOW}$Message (y/n): ${script:NC}"
+        Write-Host "$Message (y/n): " -ForegroundColor Yellow -NoNewline
+        $response = Read-Host
         $response = $response.ToLower()
     } while ($response -ne "y" -and $response -ne "n")
     
@@ -32,17 +27,17 @@ function prompt-user {
 
 function install-scoop {
     if (Get-Command scoop -ErrorAction SilentlyContinue) {
-        Write-ColorHost "--- Scoop already installed, skipping ---" $script:GREEN
+        Write-ColorHost "--- Scoop already installed, skipping ---" "Green"
         return
     }
     
-    Write-ColorHost "--- Installing Scoop ---" $script:BLUE
+    Write-ColorHost "--- Installing Scoop ---" "Blue"
     Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
     Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression
 }
 
 function install-deps {
-    Write-ColorHost "--- Installing Dependencies ---" $script:BLUE
+    Write-ColorHost "--- Installing Dependencies ---" "Blue"
     scoop bucket add extras
     scoop install @(
         "fnm"
@@ -60,40 +55,32 @@ function install-deps {
 }
 
 function setup-alacritty-context-menu {
-    Write-ColorHost "--- Setting up Alacritty Context Menu ---" $script:BLUE
+    Write-ColorHost "--- Setting up Alacritty Context Menu ---" "Blue"
     
     $regFile = "$env:USERPROFILE\scoop\apps\alacritty\current\install-context.reg"
     
     if (Test-Path $regFile) {
         Write-Host "- Importing Alacritty context menu registry entries..."
         reg import $regFile
-        Write-ColorHost "- Alacritty context menu setup complete!" $script:GREEN
+        Write-ColorHost "- Alacritty context menu setup complete!" "Green"
     } else {
         Write-Host "- Registry file not found: $regFile"
-        Write-ColorHost "- Skipping context menu setup" $script:YELLOW
+        Write-ColorHost "- Skipping context menu setup" "Yellow"
     }
 }
 
 function install-fonts-elevated {
-    Write-ColorHost "--- Installing Hermit Nerd Font ---" $script:BLUE
+    Write-ColorHost "--- Installing Hurmit Nerd Font ---" "Blue"
     
-    # Check if Hermit fonts are already installed
-    $fontsPath = "$env:WINDIR\Fonts"
-    $hermitFonts = Get-ChildItem -Path $fontsPath -Filter "*Hermit*" -ErrorAction SilentlyContinue
-    
-    if ($hermitFonts.Count -gt 0) {
-        Write-ColorHost "- Hermit fonts already installed:" $script:GREEN
-        $hermitFonts | ForEach-Object { Write-ColorHost "  $($_.Name)" $script:GREEN }
-        
-        if (!(prompt-user "Do you want to reinstall the fonts?")) {
-            Write-ColorHost "- Skipping font installation" $script:YELLOW
-            return
-        }
+    # Check if Hurmit fonts are already installed
+    if (check-fonts-installed) {
+        Write-ColorHost "- Hurmit fonts already installed, skipping" "Green"
+        return
     }
     
-    $fontUrl = "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.4.0/Hermit.zip"
+    $fontUrl = "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.4.0/Hurmit.zip"
     $tempDir = Join-Path $env:TEMP "hermit-font"
-    $zipPath = Join-Path $tempDir "Hermit.zip"
+    $zipPath = Join-Path $tempDir "Hurmit.zip"
     
     # Create temp directory
     if (!(Test-Path $tempDir)) {
@@ -101,7 +88,7 @@ function install-fonts-elevated {
     }
     
     # Download font
-    Write-Host "- Downloading Hermit Nerd Font..."
+    Write-Host "- Downloading Hurmit Nerd Font..."
     Invoke-WebRequest -Uri $fontUrl -OutFile $zipPath
     
     # Extract zip
@@ -129,21 +116,26 @@ function install-fonts-elevated {
     Write-Host "- Cleaning up..."
     Remove-Item -Path $tempDir -Recurse -Force
     
-    Write-ColorHost "- Hermit Nerd Font installation complete!" $script:GREEN
+    Write-ColorHost "- Hurmit Nerd Font installation complete!" "Green"
+}
+
+function check-fonts-installed {
+    $fontsPath = "$env:WINDIR\Fonts"
+    $hermitFonts = Get-ChildItem -Path $fontsPath -Filter "*Hurmit*" -ErrorAction SilentlyContinue
+    return $hermitFonts.Count -gt 0
 }
 
 function run-elevated-tasks {
-    Write-ColorHost "--- Running Elevated Tasks ---" $script:BLUE
+    Write-ColorHost "--- Running Elevated Tasks ---" "Blue"
     
-    # Launch elevated PowerShell for both font installation and linking
+    # Launch elevated PowerShell
     $dotfilesDir = $PSScriptRoot
     $scriptPath = Join-Path $dotfilesDir "Setup.ps1"
-    
     Start-Process powershell -ArgumentList "-Command", "& '$scriptPath' --elevated-tasks" -Verb RunAs -Wait
 }
 
 function upgrade-scoop {
-    Write-ColorHost "--- Upgrading Scoop and Packages ---" $script:BLUE
+    Write-ColorHost "--- Upgrading Scoop and Packages ---" "Blue"
     
     # Update scoop itself
     Write-Host "- Updating scoop..."
@@ -153,7 +145,7 @@ function upgrade-scoop {
     Write-Host "- Updating installed packages..."
     scoop update *
     
-    Write-ColorHost "- Scoop upgrade complete!" $script:GREEN
+    Write-ColorHost "- Scoop upgrade complete!" "Green"
 }
 
 function link-dir {
@@ -167,25 +159,38 @@ function link-dir {
     $fullSource = Join-Path $dotfilesDir $Source
     
     $dirName = Split-Path $fullSource -Leaf
-    Write-ColorHost "--- Linking $dirName ---" $script:BLUE
+    Write-ColorHost "--- Linking $dirName ---" "Blue"
     
+    # Check if destination already exists
     if (Test-Path $Destination) {
-        Write-ColorHost "- Symlink already exists: $Destination, skipping" $script:GREEN
-        return
+        # Check if it's already a symlink pointing to the right place
+        $item = Get-Item $Destination
+        if ($item.LinkType -eq "SymbolicLink" -and $item.Target -eq $fullSource) {
+            Write-ColorHost "- Symlink already exists and points to correct target: $Destination, skipping" "Green"
+            return
+        }
+        
+        if (!$Force) {
+            Write-ColorHost "- Path already exists: $Destination, skipping (use -Force to overwrite)" "Yellow"
+            return
+        } else {
+            Write-ColorHost "- Removing existing path: $Destination" "Yellow"
+            Remove-Item -Path $Destination -Recurse -Force
+        }
     }
     
     $destinationDir = Split-Path $Destination -Parent
     if (!(Test-Path $destinationDir)) {
-        Write-ColorHost "--- Creating directory: $destinationDir ---" $script:BLUE
+        Write-ColorHost "--- Creating directory: $destinationDir ---" "Blue"
         New-Item -ItemType Directory -Path $destinationDir -Force | Out-Null
     }
     
-    Write-ColorHost "--- Creating symlink: $fullSource -> $Destination ---" $script:BLUE
+    Write-ColorHost "--- Creating symlink: $fullSource -> $Destination ---" "Blue"
     New-Item -ItemType SymbolicLink -Path $Destination -Target $fullSource | Out-Null
 }
 
 function setup-git {
-    Write-ColorHost "--- Setting up Git configuration ---" $script:BLUE
+    Write-ColorHost "--- Setting up Git configuration ---" "Blue"
     
     # Add include directive to global gitconfig if not already present
     $includeCheck = git config --global --get-all include.path | Where-Object { $_ -like "*dotfiles/git/gitconfig*" }
@@ -193,14 +198,14 @@ function setup-git {
     if (!$includeCheck) {
         Write-Host "- Adding dotfiles git config include..."
         git config --global include.path "~/dotfiles/git/gitconfig"
-        Write-ColorHost "- Git configuration setup complete!" $script:GREEN
+        Write-ColorHost "- Git configuration setup complete!" "Green"
     } else {
-        Write-ColorHost "- Git configuration already setup, skipping" $script:GREEN
+        Write-ColorHost "- Git configuration already setup, skipping" "Green"
     }
 }
 
 function setup-links-elevated {
-    Write-ColorHost "--- Linking dotfiles ---" $script:BLUE
+    Write-ColorHost "--- Linking dotfiles ---" "Blue"
     
     link-dir "alacritty" "$env:APPDATA\alacritty"
     link-dir "nvim" "$env:LOCALAPPDATA\nvim"
@@ -208,7 +213,7 @@ function setup-links-elevated {
 }
 
 function setup-node {
-    Write-ColorHost "--- Setting up Node.js with fnm ---" $script:BLUE
+    Write-ColorHost "--- Setting up Node.js with fnm ---" "Blue"
     
     # Initialize fnm environment
     Write-Host "- Initializing fnm environment..."
@@ -220,17 +225,17 @@ function setup-node {
     fnm use lts-latest
     fnm default lts-latest
     
-    Write-ColorHost "- Node.js setup complete!" $script:GREEN
+    Write-ColorHost "- Node.js setup complete!" "Green"
     node --version
     npm --version
 }
 
 function setup-claude-code {
-    Write-ColorHost "--- Installing Claude Code ---" $script:BLUE
+    Write-ColorHost "--- Installing Claude Code ---" "Blue"
     
     # Check if Claude Code is already installed
     if (Get-Command claude -ErrorAction SilentlyContinue) {
-        Write-ColorHost "- Claude Code already installed, skipping" $script:GREEN
+        Write-ColorHost "- Claude Code already installed, skipping" "Green"
         return
     }
     
@@ -238,14 +243,63 @@ function setup-claude-code {
     Write-Host "- Installing Claude Code via npm..."
     npm install -g @anthropic/claude-code
     
-    Write-ColorHost "- Claude Code installation complete!" $script:GREEN
+    Write-ColorHost "- Claude Code installation complete!" "Green"
     claude --version
+}
+
+function setup-msvc-environment {
+    Write-ColorHost "--- Finding MSVC environment variables ---" "Blue"
+    
+    # Find vcvarsall.bat (prefer Enterprise > Professional > Community, 2022 > 2019)
+    $vcvarsallPaths = @(
+        "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat",
+        "C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Auxiliary\Build\vcvarsall.bat",
+        "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat",
+        "C:\Program Files\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvarsall.bat",
+        "C:\Program Files\Microsoft Visual Studio\2019\Professional\VC\Auxiliary\Build\vcvarsall.bat",
+        "C:\Program Files\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvarsall.bat"
+    )
+    
+    $vcvarsall = $vcvarsallPaths | Where-Object { Test-Path $_ } | Select-Object -First 1
+    
+    if ($vcvarsall) {
+        Write-ColorHost "- Found MSVC at: $vcvarsall" "Green"
+        
+        # Create batch file to capture environment
+        $tempBat = "$env:USERPROFILE\msvc_setup.bat"
+        $cacheFile = "$env:USERPROFILE\.msvc_env_cache"
+        
+        @"
+@echo off
+call "$vcvarsall" x64 > nul
+set > "$cacheFile"
+"@ | Out-File -FilePath $tempBat -Encoding ASCII
+        
+        # Run batch file to generate cache
+        cmd /c $tempBat
+        
+        if (Test-Path $cacheFile) {
+            Write-ColorHost "- MSVC environment cache created successfully" "Green"
+        } else {
+            Write-ColorHost "- Failed to create MSVC environment cache" "Red"
+        }
+        
+        # Clean up temp file
+        Remove-Item $tempBat -ErrorAction SilentlyContinue
+    } else {
+        Write-ColorHost "- No MSVC installation found" "Yellow"
+    }
 }
 
 
 # Handle elevated execution with parameters
 if ($Action -eq "--elevated-tasks") {
-    install-fonts-elevated
+    # Check if fonts are installed
+    if (check-fonts-installed) {
+        Write-ColorHost "--- Hurmit fonts already installed, skipping font installation ---" "Green"
+    } else {
+        install-fonts-elevated
+    }
     setup-links-elevated
     Write-Host 'Press any key to continue...'
     $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
@@ -253,13 +307,14 @@ if ($Action -eq "--elevated-tasks") {
 }
 else {
     # Normal execution - run all steps
-    Write-ColorHost "=== Windows Dotfiles Setup ===" $script:GREEN
+    Write-ColorHost "=== Windows Dotfiles Setup ===" "Green"
     
     install-scoop
     install-deps
     upgrade-scoop
     setup-node
     setup-claude-code
+    setup-msvc-environment
     setup-git
     setup-alacritty-context-menu
     run-elevated-tasks

@@ -44,6 +44,30 @@ if ($cargo_bin | path exists) {
     $env.PATH = $env.PATH | prepend $cargo_bin
 }
 
+# Load MSVC environment on Windows (cache created by Setup.ps1)
+if $nu.os-info.name == 'windows' {
+    let cache_file = $"($env.USERPROFILE)/.msvc_env_cache"
+    
+    if ($cache_file | path exists) {
+        let env_lines = (open $cache_file | lines | where ($it | str contains "="))
+        
+        for line in $env_lines {
+            let parts = ($line | split row "=" | take 2)
+            if ($parts | length) >= 2 {
+                let name = ($parts | get 0)
+                let value = ($parts | get 1)
+                
+                match $name {
+                    "PATH" => { $env.PATH = ($value | split row ";" | where ($it | str length) > 0) },
+                    "INCLUDE" => { $env.INCLUDE = $value },
+                    "LIB" => { $env.LIB = $value },
+                    _ => {}
+                }
+            }
+        }
+    }
+}
+
 if not (which fnm | is-empty) {
     ^fnm env --json | from json | load-env
 
