@@ -17,6 +17,20 @@
 # You can remove these comments if you want or leave
 # them for future reference.
 
+# Setup Homebrew (macOS only)
+if $nu.os-info.name == 'macos' {
+    let brew_path = if ($nu.os-info.arch == 'aarch64') { '/opt/homebrew/bin/brew' } else { '/usr/local/bin/brew' }
+    if ($brew_path | path exists) {
+        ^$brew_path shellenv | lines | each { |line| 
+            let parts = ($line | parse --regex 'export (?P<name>\w+)="?(?P<value>[^"]*)"?')
+            if not ($parts | is-empty) {
+                let var = $parts | get 0
+                load-env {($var.name): ($var.value)}
+            }
+        }
+    }
+}
+
 if not (which fnm | is-empty) {
     ^fnm env --json | from json | load-env
 
