@@ -38,7 +38,8 @@ if $nu.os-info.name == 'macos' {
 }
 
 # Add Rust/Cargo bin directory to PATH
-let cargo_bin = $"($env.HOME)/.cargo/bin"
+let home_dir = if $nu.os-info.name == 'windows' { $env.USERPROFILE } else { $env.HOME }
+let cargo_bin = $"($home_dir)/.cargo/bin"
 if ($cargo_bin | path exists) {
     $env.PATH = $env.PATH | prepend $cargo_bin
 }
