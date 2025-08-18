@@ -53,6 +53,7 @@ function install-deps {
         "alacritty"
         "neovim"
         "nu"
+        "obsidian"
     )
 }
 

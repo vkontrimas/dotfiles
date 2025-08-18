@@ -73,6 +73,9 @@ install_deps() {
         neovim \
         nushell \
         font-hurmit-nerd-font
+    
+    # Install GUI applications via cask
+    brew install --cask obsidian
 }
 
 install_iterm2() {
