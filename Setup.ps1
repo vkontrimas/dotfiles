@@ -50,6 +50,8 @@ function install-deps {
         "tre-command"
         "delta"
 
+        "just"
+
         "alacritty"
         "neovim"
         "nu"

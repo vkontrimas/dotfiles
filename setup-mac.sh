@@ -72,7 +72,8 @@ install_deps() {
         git-delta \
         neovim \
         nushell \
-        font-hurmit-nerd-font
+        font-hurmit-nerd-font \
+        just
     
     # Install GUI applications via cask
     brew install --cask obsidian
