@@ -133,7 +133,8 @@ require("lazy").setup({
           { "<leader>b", "<cmd>FzfLua buffers<cr>", desc = "Fuzzy buffers" },
 
           { "<leader>r", "<cmd>FzfLua lsp_references<cr>", desc = "Fuzzy references" },
-          { "<leader>s", "<cmd>FzfLua lsp_live_workspace_symbols<cr>", desc = "Fuzzy symbols" },
+          { "<leader>s", "<cmd>FzfLua lsp_document_symbols<cr>", desc = "Fuzzy symbols (document)" },
+          { "<leader>a", "<cmd>FzfLua lsp_live_workspace_symbols<cr>", desc = "Fuzzy symbols (all)" },
           { "<leader>c", "<cmd>FzfLua lsp_incoming_calls<cr>", desc = "Fuzzy incoming calls" },
           { "<leader>C", "<cmd>FzfLua lsp_outgoing_calls<cr>", desc = "Fuzzy outgoing calls" },
           { "<leader>dr", "<cmd>FzfLua lsp_document_diagnostics<cr>", desc = "Fuzzy diagnostics" },
