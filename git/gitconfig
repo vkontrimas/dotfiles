@@ -14,3 +14,13 @@
 
 [init]
 	defaultbranch = main
+
+[core]
+	pager = delta
+
+[interactive]
+	difffilter = delta --color-only
+
+[delta]
+	navigate = true
+	dark = true
