@@ -83,7 +83,7 @@ function install-fonts-elevated {
         return
     }
     
-    $fontUrl = "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.4.0/Hurmit.zip"
+    $fontUrl = "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.4.0/Hermit.zip"
     $tempDir = Join-Path $env:TEMP "hermit-font"
     $zipPath = Join-Path $tempDir "Hurmit.zip"
     
