@@ -37,6 +37,9 @@ if $nu.os-info.name == 'macos' {
     }
 }
 
+# Set editor
+$env.EDITOR = 'nvim'
+
 # Add Rust/Cargo bin directory to PATH
 let home_dir = if $nu.os-info.name == 'windows' { $env.USERPROFILE } else { $env.HOME }
 let cargo_bin = $"($home_dir)/.cargo/bin"
