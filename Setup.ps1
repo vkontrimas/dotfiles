@@ -50,6 +50,7 @@ function install-deps {
         "tre-command"
         "delta"
 
+        "graphviz"
         "just"
 
         "alacritty"

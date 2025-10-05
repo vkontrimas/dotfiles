@@ -70,11 +70,12 @@ install_deps() {
         ripgrep \
         tre-command \
         git-delta \
+        graphviz \
         neovim \
         nushell \
         font-hurmit-nerd-font \
         just
-    
+
     # Install GUI applications via cask
     brew install --cask obsidian
 }
