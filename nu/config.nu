@@ -49,6 +49,13 @@ if ($cargo_bin | path exists) {
 
 # Load MSVC environment on Windows (cache created by Setup.ps1)
 if $nu.os-info.name == 'windows' {
+    # Ensure Scoop shims are first in PATH
+    let scoop_shims = $"($env.USERPROFILE)/scoop/shims"
+    if ($scoop_shims | path exists) {
+        # Remove scoop shims if already in PATH, then prepend to ensure it's first
+        $env.PATH = ($env.PATH | where $it != $scoop_shims | prepend $scoop_shims)
+    }
+
     let cache_file = $"($env.USERPROFILE)/.msvc_env_cache"
     
     if ($cache_file | path exists) {
@@ -61,7 +68,12 @@ if $nu.os-info.name == 'windows' {
                 let value = ($parts | get 1)
                 
                 match $name {
-                    "PATH" | "Path" => { $env.PATH = ($value | split row ";" | where ($it | str length) > 0) },
+                    "PATH" | "Path" => {
+                        # Parse MSVC paths and filter out duplicates
+                        let msvc_paths = ($value | split row ";" | where ($it | str length) > 0)
+                        let unique_paths = ($msvc_paths | where {|path| $path not-in $env.PATH})
+                        $env.PATH = ($env.PATH | append $unique_paths)
+                    },
                     "INCLUDE" => { $env.INCLUDE = $value },
                     "LIB" => { $env.LIB = $value },
                     _ => {}
@@ -69,6 +81,8 @@ if $nu.os-info.name == 'windows' {
             }
         }
     }
+
+    $env.PATH = $env.PATH | append 'C:\Program Files\Docker\Docker\resources\bin'
 }
 
 if not (which fnm | is-empty) {
