@@ -47,7 +47,6 @@ if ($cargo_bin | path exists) {
     $env.PATH = $env.PATH | prepend $cargo_bin
 }
 
-# Load MSVC environment on Windows (cache created by Setup.ps1)
 if $nu.os-info.name == 'windows' {
     # Ensure Scoop shims are first in PATH
     let scoop_shims = $"($env.USERPROFILE)/scoop/shims"
@@ -56,8 +55,8 @@ if $nu.os-info.name == 'windows' {
         $env.PATH = ($env.PATH | where $it != $scoop_shims | prepend $scoop_shims)
     }
 
+    # Load MSVC environment on Windows (cache created by Setup.ps1)
     let cache_file = $"($env.USERPROFILE)/.msvc_env_cache"
-    
     if ($cache_file | path exists) {
         let env_lines = (open $cache_file | lines | where ($it | str contains "="))
         
@@ -82,7 +81,11 @@ if $nu.os-info.name == 'windows' {
         }
     }
 
+    # Docker
     $env.PATH = $env.PATH | append 'C:\Program Files\Docker\Docker\resources\bin'
+
+    # CC = cl
+    $env.CC = 'cl'
 }
 
 if not (which fnm | is-empty) {
