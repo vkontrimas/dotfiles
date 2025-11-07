@@ -1,12 +1,14 @@
 [alias]
 	st = status
 	amend = commit --amend
-	ll = log
+	lll = log
+	ll = !git --no-pager log --oneline -60
 	l = !git --no-pager log --oneline -20
 	c = commit
 	a = commit --amend
 	af = commit --amend --no-edit
 	ch = checkout
+	cf = commit --fixup
 
 [status]
 	short = true
