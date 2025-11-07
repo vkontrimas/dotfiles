@@ -48,13 +48,6 @@ if ($cargo_bin | path exists) {
 }
 
 if $nu.os-info.name == 'windows' {
-    # Ensure Scoop shims are first in PATH
-    let scoop_shims = $"($env.USERPROFILE)/scoop/shims"
-    if ($scoop_shims | path exists) {
-        # Remove scoop shims if already in PATH, then prepend to ensure it's first
-        $env.PATH = ($env.PATH | where $it != $scoop_shims | prepend $scoop_shims)
-    }
-
     # Load MSVC environment on Windows (cache created by Setup.ps1)
     let cache_file = $"($env.USERPROFILE)/.msvc_env_cache"
     if ($cache_file | path exists) {
@@ -79,6 +72,13 @@ if $nu.os-info.name == 'windows' {
                 }
             }
         }
+    }
+
+    # We want scoop shims to be after MSVC so we can override things like llvm
+    let scoop_shims = $"($env.USERPROFILE)/scoop/shims"
+    if ($scoop_shims | path exists) {
+        # Remove scoop shims if already in PATH, then prepend to ensure it's first
+        $env.PATH = ($env.PATH | where $it != $scoop_shims | prepend $scoop_shims)
     }
 
     # Docker
