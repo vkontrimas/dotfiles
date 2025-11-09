@@ -164,15 +164,16 @@ require("lazy").setup({
       end,
     },
     {
-      'nvim-treesitter/nvim-treesitter-context',
-      dependencies = { 'nvim-treesitter/nvim-treesitter' },
+      "nvim-treesitter/nvim-treesitter-context",
+      dependencies = { "nvim-treesitter/nvim-treesitter" },
       config = function()
-        require('treesitter-context').setup({
+        require("treesitter-context").setup({
           enable = true,
-          max_lines = 3,
-          trim_scope = 'outer',
+          multiline_threshold = 1,
+          max_lines = 0,
+          trim_scope = "outer",
         })
-      end
+      end,
     },
     {
       "williamboman/mason.nvim",
