@@ -83,9 +83,12 @@ if $nu.os-info.name == 'windows' {
 
     # Docker
     $env.PATH = $env.PATH | append 'C:\Program Files\Docker\Docker\resources\bin'
+}
 
-    # CC = cl
-    $env.CC = 'cl'
+$env.CC = match $nu.os-info.name {
+    "windows" => "cl",
+    "linux" => "gcc",
+    "macos" => "clang"
 }
 
 if not (which fnm | is-empty) {
