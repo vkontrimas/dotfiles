@@ -25,7 +25,7 @@ vim.opt.rtp:prepend(lazypath)
 --------------------------------------------------------------------------------
 -- SETTINGS      SETTINGS       SETTINGS                                      --
 --------------------------------------------------------------------------------
-VK_TAB_SIZE = 4
+VK_TAB_SIZE = 2
 vim.opt.tabstop = VK_TAB_SIZE
 vim.opt.softtabstop = VK_TAB_SIZE
 vim.opt.shiftwidth = VK_TAB_SIZE
@@ -125,6 +125,7 @@ require("lazy").setup({
         { "<leader>f", "<cmd>FzfLua files<cr>", desc = "Fuzzy find files" },
         { "<leader>g", "<cmd>FzfLua live_grep<cr>", desc = "Fuzzy grep" },
         { "<leader>b", "<cmd>FzfLua buffers<cr>", desc = "Fuzzy buffers" },
+        { "<leader>m", "<cmd>FzfLua marks<cr>", desc = "Fuzzy marks" },
 
         { "<leader>r", "<cmd>FzfLua lsp_references<cr>", desc = "Fuzzy references" },
         { "<leader>s", "<cmd>FzfLua lsp_document_symbols<cr>", desc = "Fuzzy symbols (document)" },
@@ -202,6 +203,9 @@ require("lazy").setup({
         vim.g.coq_settings = {
           auto_start = "shut-up", -- if you want to start COQ at startup
           -- Your COQ settings here
+          clients = {
+            tree_sitter = { enabled = false },
+          },
         }
       end,
       config = function()
@@ -271,6 +275,11 @@ require("lazy").setup({
       config = function()
         require("guess-indent").setup({})
       end,
+    },
+    {
+      "chentoast/marks.nvim",
+      event = "VeryLazy",
+      opts = {},
     },
   },
   -- Configure any other settings here. See the documentation for more details.
