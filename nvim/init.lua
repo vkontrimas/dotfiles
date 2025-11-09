@@ -216,6 +216,7 @@ require("lazy").setup({
           -- Your COQ settings here
           clients = {
             tree_sitter = { enabled = false },
+            buffers = { enabled = false },
           },
         }
       end,
