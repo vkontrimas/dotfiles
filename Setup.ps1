@@ -255,18 +255,50 @@ function setup-claude-code {
 
 function setup-msvc-environment {
     Write-ColorHost "--- Finding MSVC environment variables ---" "Blue"
-    
-    # Find vcvarsall.bat (prefer Enterprise > Professional > Community, 2022 > 2019)
-    $vcvarsallPaths = @(
-        "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat",
-        "C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Auxiliary\Build\vcvarsall.bat",
-        "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat",
-        "C:\Program Files\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvarsall.bat",
-        "C:\Program Files\Microsoft Visual Studio\2019\Professional\VC\Auxiliary\Build\vcvarsall.bat",
-        "C:\Program Files\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvarsall.bat"
-    )
-    
-    $vcvarsall = $vcvarsallPaths | Where-Object { Test-Path $_ } | Select-Object -First 1
+
+    $vcvarsall = $null
+
+    # Try to use vswhere.exe for dynamic Visual Studio detection (supports all VS versions)
+    $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+
+    if (Test-Path $vswhere) {
+        Write-Host "- Using vswhere.exe to detect Visual Studio installation..."
+
+        # Find the latest VS installation with VC tools
+        $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+
+        if ($vsPath) {
+            $vcvarsall = Join-Path $vsPath "VC\Auxiliary\Build\vcvarsall.bat"
+
+            if (!(Test-Path $vcvarsall)) {
+                Write-ColorHost "- vswhere found VS installation but vcvarsall.bat not found at expected location" "Yellow"
+                $vcvarsall = $null
+            }
+        } else {
+            Write-ColorHost "- vswhere.exe did not find any Visual Studio installation with VC tools" "Yellow"
+        }
+    } else {
+        Write-ColorHost "- vswhere.exe not found, falling back to hardcoded paths" "Yellow"
+    }
+
+    # Fallback: Use hardcoded paths if vswhere didn't find anything
+    if (!$vcvarsall) {
+        Write-Host "- Searching hardcoded paths for vcvarsall.bat..."
+
+        $vcvarsallPaths = @(
+            "C:\Program Files\Microsoft Visual Studio\2026\Enterprise\VC\Auxiliary\Build\vcvarsall.bat",
+            "C:\Program Files\Microsoft Visual Studio\2026\Professional\VC\Auxiliary\Build\vcvarsall.bat",
+            "C:\Program Files\Microsoft Visual Studio\2026\Community\VC\Auxiliary\Build\vcvarsall.bat",
+            "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat",
+            "C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Auxiliary\Build\vcvarsall.bat",
+            "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat",
+            "C:\Program Files\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvarsall.bat",
+            "C:\Program Files\Microsoft Visual Studio\2019\Professional\VC\Auxiliary\Build\vcvarsall.bat",
+            "C:\Program Files\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvarsall.bat"
+        )
+
+        $vcvarsall = $vcvarsallPaths | Where-Object { Test-Path $_ } | Select-Object -First 1
+    }
     
     if ($vcvarsall) {
         Write-ColorHost "- Found MSVC at: $vcvarsall" "Green"
