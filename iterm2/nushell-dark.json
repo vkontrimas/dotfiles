@@ -101,6 +101,48 @@
         "Red Component": 1.0,
         "Green Component": 1.0,
         "Blue Component": 1.0
+      },
+      "Keyboard Map": {
+        "0x64-0x60000": {
+          "Action": 28,
+          "Text": ""
+        },
+        "0x64-0x1e0000": {
+          "Action": 27,
+          "Text": ""
+        },
+        "0xf702-0x60000": {
+          "Action": 25,
+          "Text": ""
+        },
+        "0xf703-0x60000": {
+          "Action": 26,
+          "Text": ""
+        },
+        "0xf701-0x60000": {
+          "Action": 24,
+          "Text": ""
+        },
+        "0xf700-0x60000": {
+          "Action": 23,
+          "Text": ""
+        },
+        "0xf702-0x1e0000": {
+          "Action": 21,
+          "Text": ""
+        },
+        "0xf703-0x1e0000": {
+          "Action": 22,
+          "Text": ""
+        },
+        "0xf701-0x1e0000": {
+          "Action": 20,
+          "Text": ""
+        },
+        "0xf700-0x1e0000": {
+          "Action": 19,
+          "Text": ""
+        }
       }
     }
   ]

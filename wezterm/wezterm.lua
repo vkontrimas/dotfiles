@@ -23,6 +23,64 @@ config.window_padding = {
 -- Enable live config reload
 config.automatically_reload_config = true
 
+-- Keybindings
+config.keys = {
+  -- Split vertically (left-right)
+  {
+    key = 'd',
+    mods = 'CTRL|ALT',
+    action = wezterm.action.SplitHorizontal { domain = 'CurrentPaneDomain' },
+  },
+  -- Split horizontally (top-bottom)
+  {
+    key = 'd',
+    mods = 'CTRL|SHIFT|ALT',
+    action = wezterm.action.SplitVertical { domain = 'CurrentPaneDomain' },
+  },
+  -- Navigate panes
+  {
+    key = 'LeftArrow',
+    mods = 'CTRL|ALT',
+    action = wezterm.action.ActivatePaneDirection 'Left',
+  },
+  {
+    key = 'RightArrow',
+    mods = 'CTRL|ALT',
+    action = wezterm.action.ActivatePaneDirection 'Right',
+  },
+  {
+    key = 'UpArrow',
+    mods = 'CTRL|ALT',
+    action = wezterm.action.ActivatePaneDirection 'Up',
+  },
+  {
+    key = 'DownArrow',
+    mods = 'CTRL|ALT',
+    action = wezterm.action.ActivatePaneDirection 'Down',
+  },
+  -- Resize panes
+  {
+    key = 'LeftArrow',
+    mods = 'CTRL|SHIFT|ALT',
+    action = wezterm.action.AdjustPaneSize { 'Left', 5 },
+  },
+  {
+    key = 'RightArrow',
+    mods = 'CTRL|SHIFT|ALT',
+    action = wezterm.action.AdjustPaneSize { 'Right', 5 },
+  },
+  {
+    key = 'UpArrow',
+    mods = 'CTRL|SHIFT|ALT',
+    action = wezterm.action.AdjustPaneSize { 'Up', 5 },
+  },
+  {
+    key = 'DownArrow',
+    mods = 'CTRL|SHIFT|ALT',
+    action = wezterm.action.AdjustPaneSize { 'Down', 5 },
+  },
+}
+
 -- Ayu Dark color scheme
 config.colors = {
   -- Primary colors
