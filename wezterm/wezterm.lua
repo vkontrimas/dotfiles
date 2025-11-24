@@ -11,6 +11,13 @@ config.default_prog = { 'nu' }
 -- Window configuration
 config.initial_cols = 120
 config.initial_rows = 40
+config.window_decorations = "INTEGRATED_BUTTONS|RESIZE"
+
+-- Start maximized
+wezterm.on('gui-startup', function(cmd)
+  local tab, pane, window = wezterm.mux.spawn_window(cmd or {})
+  window:gui_window():maximize()
+end)
 
 -- Padding configuration
 config.window_padding = {
