@@ -170,8 +170,8 @@ require("lazy").setup({
         require("treesitter-context").setup({
           enable = true,
           multiline_threshold = 1,
-          max_lines = 0,
-          trim_scope = "outer",
+          max_lines = 8,
+          trim_scope = "inner",
         })
       end,
     },
