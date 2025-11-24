@@ -77,7 +77,9 @@ install_deps() {
         just
 
     # Install GUI applications via cask
-    brew install --cask obsidian
+    brew install --cask \
+        obsidian \
+        wezterm
 }
 
 install_iterm2() {
@@ -93,12 +95,12 @@ install_iterm2() {
 link_dir() {
     local source="$1"
     local destination="$2"
-    
+
     local full_source="$DOTFILES_DIR/$source"
     local dir_name=$(basename "$full_source")
-    
+
     echo -e "${BLUE}--- Linking $dir_name ---${NC}"
-    
+
     # Check if destination already exists
     if [[ -e "$destination" ]]; then
         # Check if it's already a symlink pointing to the right place
@@ -106,7 +108,7 @@ link_dir() {
             echo -e "${GREEN}- Symlink already exists and points to correct target: $destination, skipping${NC}"
             return
         fi
-        
+
         if [[ "$FORCE" != "true" ]]; then
             echo -e "${YELLOW}- Path already exists: $destination, skipping (use --force to overwrite)${NC}"
             return
@@ -115,13 +117,49 @@ link_dir() {
             rm -rf "$destination"
         fi
     fi
-    
+
     local destination_dir=$(dirname "$destination")
     if [[ ! -d "$destination_dir" ]]; then
         echo -e "${BLUE}--- Creating directory: $destination_dir ---${NC}"
         mkdir -p "$destination_dir"
     fi
-    
+
+    echo -e "${BLUE}--- Creating symlink: $full_source -> $destination ---${NC}"
+    ln -sf "$full_source" "$destination"
+}
+
+link_file() {
+    local source="$1"
+    local destination="$2"
+
+    local full_source="$DOTFILES_DIR/$source"
+    local file_name=$(basename "$full_source")
+
+    echo -e "${BLUE}--- Linking $file_name ---${NC}"
+
+    # Check if destination already exists
+    if [[ -e "$destination" ]]; then
+        # Check if it's already a symlink pointing to the right place
+        if [[ -L "$destination" ]] && [[ "$(readlink "$destination")" == "$full_source" ]]; then
+            echo -e "${GREEN}- Symlink already exists and points to correct target: $destination, skipping${NC}"
+            return
+        fi
+
+        if [[ "$FORCE" != "true" ]]; then
+            echo -e "${YELLOW}- File already exists: $destination, skipping (use --force to overwrite)${NC}"
+            return
+        else
+            echo -e "${YELLOW}- Removing existing file: $destination${NC}"
+            rm -f "$destination"
+        fi
+    fi
+
+    local destination_dir=$(dirname "$destination")
+    if [[ ! -d "$destination_dir" ]]; then
+        echo -e "${BLUE}--- Creating directory: $destination_dir ---${NC}"
+        mkdir -p "$destination_dir"
+    fi
+
     echo -e "${BLUE}--- Creating symlink: $full_source -> $destination ---${NC}"
     ln -sf "$full_source" "$destination"
 }
@@ -141,14 +179,17 @@ setup_git() {
 
 setup_links() {
     echo -e "${BLUE}--- Linking dotfiles ---${NC}"
-    
+
     # Standard config directories
     link_dir "alacritty" "$HOME/.config/alacritty"
     link_dir "nvim" "$HOME/.config/nvim"
     link_dir "nu" "$HOME/Library/Application Support/nushell"
-    
+
     # iTerm2 profile configuration
     link_dir "iterm2/nushell-dark.json" "$HOME/Library/Application Support/iTerm2/DynamicProfiles/nushell-dark.json"
+
+    # WezTerm configuration
+    link_file "wezterm/wezterm.lua" "$HOME/.wezterm.lua"
 }
 
 setup_node() {

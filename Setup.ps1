@@ -39,6 +39,7 @@ function install-scoop {
 function install-deps {
     Write-ColorHost "--- Installing Dependencies ---" "Blue"
     scoop bucket add extras
+    scoop bucket add versions
     scoop install @(
         "fnm"
 
@@ -54,6 +55,7 @@ function install-deps {
         "just"
 
         "alacritty"
+        "wezterm-nightly"
         "neovim"
         "nu"
         "obsidian"
@@ -159,14 +161,14 @@ function link-dir {
         [string]$Source,
         [string]$Destination
     )
-    
+
     # Prepend dotfilesDir to source path
     $dotfilesDir = $PSScriptRoot
     $fullSource = Join-Path $dotfilesDir $Source
-    
+
     $dirName = Split-Path $fullSource -Leaf
     Write-ColorHost "--- Linking $dirName ---" "Blue"
-    
+
     # Check if destination already exists
     if (Test-Path $Destination) {
         # Check if it's already a symlink pointing to the right place
@@ -175,7 +177,7 @@ function link-dir {
             Write-ColorHost "- Symlink already exists and points to correct target: $Destination, skipping" "Green"
             return
         }
-        
+
         if (!$Force) {
             Write-ColorHost "- Path already exists: $Destination, skipping (use -Force to overwrite)" "Yellow"
             return
@@ -184,13 +186,54 @@ function link-dir {
             Remove-Item -Path $Destination -Recurse -Force
         }
     }
-    
+
     $destinationDir = Split-Path $Destination -Parent
     if (!(Test-Path $destinationDir)) {
         Write-ColorHost "--- Creating directory: $destinationDir ---" "Blue"
         New-Item -ItemType Directory -Path $destinationDir -Force | Out-Null
     }
-    
+
+    Write-ColorHost "--- Creating symlink: $fullSource -> $Destination ---" "Blue"
+    New-Item -ItemType SymbolicLink -Path $Destination -Target $fullSource | Out-Null
+}
+
+function link-file {
+    param(
+        [string]$Source,
+        [string]$Destination
+    )
+
+    # Prepend dotfilesDir to source path
+    $dotfilesDir = $PSScriptRoot
+    $fullSource = Join-Path $dotfilesDir $Source
+
+    $fileName = Split-Path $fullSource -Leaf
+    Write-ColorHost "--- Linking $fileName ---" "Blue"
+
+    # Check if destination already exists
+    if (Test-Path $Destination) {
+        # Check if it's already a symlink pointing to the right place
+        $item = Get-Item $Destination
+        if ($item.LinkType -eq "SymbolicLink" -and $item.Target -eq $fullSource) {
+            Write-ColorHost "- Symlink already exists and points to correct target: $Destination, skipping" "Green"
+            return
+        }
+
+        if (!$Force) {
+            Write-ColorHost "- File already exists: $Destination, skipping (use -Force to overwrite)" "Yellow"
+            return
+        } else {
+            Write-ColorHost "- Removing existing file: $Destination" "Yellow"
+            Remove-Item -Path $Destination -Force
+        }
+    }
+
+    $destinationDir = Split-Path $Destination -Parent
+    if (!(Test-Path $destinationDir)) {
+        Write-ColorHost "--- Creating directory: $destinationDir ---" "Blue"
+        New-Item -ItemType Directory -Path $destinationDir -Force | Out-Null
+    }
+
     Write-ColorHost "--- Creating symlink: $fullSource -> $Destination ---" "Blue"
     New-Item -ItemType SymbolicLink -Path $Destination -Target $fullSource | Out-Null
 }
@@ -212,10 +255,11 @@ function setup-git {
 
 function setup-links-elevated {
     Write-ColorHost "--- Linking dotfiles ---" "Blue"
-    
+
     link-dir "alacritty" "$env:APPDATA\alacritty"
     link-dir "nvim" "$env:LOCALAPPDATA\nvim"
     link-dir "nu" "$env:APPDATA\nushell"
+    link-file "wezterm\wezterm.lua" "$env:USERPROFILE\.wezterm.lua"
 }
 
 function setup-node {
