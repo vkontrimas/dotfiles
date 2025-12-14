@@ -102,6 +102,7 @@
         "Green Component": 1.0,
         "Blue Component": 1.0
       },
+      "Silence Bell": 1,
       "Keyboard Map": {
         "0x64-0x60000": {
           "Action": 28,

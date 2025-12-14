@@ -30,6 +30,9 @@ config.window_padding = {
 -- Enable live config reload
 config.automatically_reload_config = true
 
+-- Disable terminal bell
+config.audible_bell = "Disabled"
+
 -- Keybindings
 config.keys = {
   -- Split vertically (left-right)
