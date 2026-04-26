@@ -47,6 +47,9 @@ if ($cargo_bin | path exists) {
     $env.PATH = $env.PATH | prepend $cargo_bin
 }
 
+# .local/bin (claude)
+$env.PATH = $env.PATH | prepend $"($home_dir)/.local/bin"
+
 if $nu.os-info.name == 'windows' {
     # Load MSVC environment on Windows (cache created by Setup.ps1)
     let cache_file = $"($env.USERPROFILE)/.msvc_env_cache"

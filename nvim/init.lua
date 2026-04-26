@@ -114,6 +114,7 @@ require("lazy").setup({
     },
     {
       "ibhagwan/fzf-lua",
+      lazy = false,
       dependencies = { "nvim-tree/nvim-web-devicons" },
       opts = {
         files = {
@@ -147,6 +148,7 @@ require("lazy").setup({
     },
     {
       "nvim-treesitter/nvim-treesitter",
+      lazy = false,
       build = ":TSUpdate",
       config = function()
         local configs = require("nvim-treesitter.configs")
@@ -220,6 +222,7 @@ require("lazy").setup({
             buffers = { enabled = false },
           },
         }
+        -- vim.lsp.set_log_level("off")
       end,
       config = function()
         vim.api.nvim_create_autocmd("LspAttach", {
