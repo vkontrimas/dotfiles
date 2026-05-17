@@ -131,3 +131,21 @@ def __dirs_index_fzf [] {
     $selected_index
 }
 alias fdir = dirs goto (__dirs_index_fzf)
+
+def watch-nvidia-smi [] {
+    loop {
+        let output = (^nvidia-smi --query-gpu=name,memory.used,memory.total,power.draw,power.limit,temperature.gpu,fan.speed --format=csv
+            | from csv
+            | rename gpu mem_used mem_total pwr_draw pwr_limit temp fan
+            | each { |row| {
+                name: ($row.gpu | str trim | str replace "NVIDIA GeForce " ""),
+                memory: ([($row.mem_used | str trim | str replace " MiB" ""), "/", ($row.mem_total | str trim | str replace " MiB" ""), " MiB"] | str join ""),
+                power: ([($row.pwr_draw | str trim | str replace " W" ""), "/", ($row.pwr_limit | str trim | str replace " W" ""), " W"] | str join ""),
+                temp: ([($row.temp | str trim), " °C"] | str join ""),
+                fan: ([($row.fan | str trim | str replace " %" ""), " %"] | str join ""),
+            } }
+            | table)
+        print -n $"(ansi --escape 'H')(ansi --escape '2J')($output)"
+        sleep 1sec
+    }
+}
