@@ -307,6 +307,23 @@ setup_coding_agents() {
     fi
 }
 
+setup_neovim_tooling() {
+    echo -e "${BLUE}--- Installing Neovim Tooling ---${NC}"
+
+    # nvim-treesitter (main branch) compiles parsers with the tree-sitter CLI.
+    # Note: brew's `tree-sitter` formula only ships libtree-sitter (a runtime
+    # dependency of brew neovim) and NOT the CLI binary, so install the CLI
+    # separately via npm. Do not `brew uninstall tree-sitter` - it breaks nvim.
+    if command -v tree-sitter &> /dev/null; then
+        echo -e "${GREEN}- tree-sitter CLI already installed, skipping${NC}"
+    else
+        echo -e "- Installing tree-sitter CLI via npm..."
+        npm install -g tree-sitter-cli
+        echo -e "${GREEN}- tree-sitter CLI installation complete!${NC}"
+        tree-sitter --version
+    fi
+}
+
 upgrade_homebrew() {
     echo -e "${BLUE}--- Upgrading Homebrew and Packages ---${NC}"
 
@@ -346,6 +363,7 @@ main() {
     install_nerd_font
     upgrade_homebrew
     setup_node
+    setup_neovim_tooling
     setup_coding_agents
     setup_git
     setup_links

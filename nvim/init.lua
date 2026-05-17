@@ -151,17 +151,32 @@ require("lazy").setup({
       lazy = false,
       build = ":TSUpdate",
       config = function()
-        local configs = require("nvim-treesitter.configs")
-        configs.setup({
-          ensure_installed = { "cmake", "cpp", "c_sharp", "rust", "c", "lua", "bash", "markdown" },
-          sync_install = false,
-          auto_install = true,
-          highlight = {
-            enable = true,
-          },
-          indent = {
-            enable = false,
-          },
+        local ts = require("nvim-treesitter")
+
+        ts.install({
+          "cmake", "cpp", "c_sharp", "rust", "c", "lua", "bash", "markdown",
+          "git_config", "git_rebase", "gitattributes", "gitcommit", "gitignore",
+        })
+
+        -- Highlighting is enabled per-buffer on the new (main) branch.
+        vim.api.nvim_create_autocmd("FileType", {
+          callback = function(args)
+            local lang = vim.treesitter.language.get_lang(vim.bo[args.buf].filetype)
+            if not lang then
+              return
+            end
+
+            if vim.list_contains(ts.get_installed(), lang) then
+              pcall(vim.treesitter.start, args.buf, lang)
+            elseif vim.list_contains(ts.get_available(), lang) then
+              -- auto_install: fetch the parser, then start highlighting.
+              ts.install(lang):await(function(err)
+                if not err and vim.api.nvim_buf_is_valid(args.buf) then
+                  pcall(vim.treesitter.start, args.buf, lang)
+                end
+              end)
+            end
+          end,
         })
       end,
     },
