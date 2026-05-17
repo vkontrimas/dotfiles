@@ -50,17 +50,51 @@ install_homebrew() {
 
     echo -e "${BLUE}--- Installing Homebrew ---${NC}"
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+}
 
-    # Add Homebrew to PATH for this session
-    if [[ $(uname -m) == "arm64" ]]; then
-        eval "$(/opt/homebrew/bin/brew shellenv)"
+# Ensure Homebrew is on PATH for this session, regardless of whether it was
+# just installed or already present (Linux doesn't add it to PATH by default).
+load_homebrew_env() {
+    if command -v brew &> /dev/null; then
+        eval "$(brew shellenv)"
+    elif [[ -x /home/linuxbrew/.linuxbrew/bin/brew ]]; then
+        eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+    elif [[ -x "$HOME/.linuxbrew/bin/brew" ]]; then
+        eval "$("$HOME/.linuxbrew/bin/brew" shellenv)"
     else
-        eval "$(/usr/local/bin/brew shellenv)"
+        echo -e "${RED}- Homebrew not found on PATH after install; aborting${NC}"
+        exit 1
     fi
+}
+
+# Linuxbrew is not on PATH for login/GUI sessions by default. WezTerm (and
+# anything else launched from the desktop) must be able to find the `nu`
+# binary *before* nu's own config runs, so persist brew's shellenv into the
+# login profile. Idempotent via a marker block.
+persist_homebrew_env() {
+    local profile="$HOME/.profile"
+    local marker="# >>> dotfiles linuxbrew env >>>"
+    local brew_bin
+    brew_bin="$(command -v brew)"
+
+    if [[ -f "$profile" ]] && grep -qF "$marker" "$profile"; then
+        echo -e "${GREEN}--- Homebrew env already persisted in ~/.profile, skipping ---${NC}"
+        return
+    fi
+
+    echo -e "${BLUE}--- Persisting Homebrew env to ~/.profile ---${NC}"
+    {
+        echo ""
+        echo "$marker"
+        echo "eval \"\$($brew_bin shellenv)\""
+        echo "# <<< dotfiles linuxbrew env <<<"
+    } >> "$profile"
+    echo -e "${YELLOW}- Log out and back in (or run 'source ~/.profile') for GUI terminals to pick this up${NC}"
 }
 
 install_deps() {
     echo -e "${BLUE}--- Installing Dependencies ---${NC}"
+
     brew install \
         fnm \
         fd \
@@ -71,25 +105,68 @@ install_deps() {
         tre-command \
         git-delta \
         graphviz \
+        just \
         neovim \
-        nushell \
-        font-hurmit-nerd-font \
-        just
-
-    # Install GUI applications via cask
-    brew install --cask \
-        obsidian \
-        wezterm
+        nushell
 }
 
-install_iterm2() {
-    if [[ -d "/Applications/iTerm.app" ]]; then
-        echo -e "${GREEN}--- iTerm2 already installed, skipping ---${NC}"
+install_wezterm() {
+    # Install WezTerm from its official apt repository rather than Homebrew:
+    # the .deb ships a .desktop entry so it shows up in the application
+    # launcher, which the Linuxbrew formula does not.
+    if command -v wezterm &> /dev/null; then
+        echo -e "${GREEN}--- WezTerm already installed, skipping ---${NC}"
         return
     fi
 
-    echo -e "${BLUE}--- Installing iTerm2 ---${NC}"
-    brew install --cask iterm2
+    echo -e "${BLUE}--- Installing WezTerm ---${NC}"
+
+    if ! command -v gpg &> /dev/null; then
+        echo -e "- Installing gpg via apt..."
+        sudo apt-get update
+        sudo apt-get install -y gnupg
+    fi
+
+    sudo mkdir -p /usr/share/keyrings
+    curl -fsSL https://apt.fury.io/wez/gpg.key \
+        | sudo gpg --yes --dearmor -o /usr/share/keyrings/wezterm-fury.gpg
+    sudo chmod 644 /usr/share/keyrings/wezterm-fury.gpg
+    echo 'deb [signed-by=/usr/share/keyrings/wezterm-fury.gpg] https://apt.fury.io/wez/ * *' \
+        | sudo tee /etc/apt/sources.list.d/wezterm.list > /dev/null
+    sudo apt-get update
+    sudo apt-get install -y wezterm
+    echo -e "${GREEN}- WezTerm installed!${NC}"
+}
+
+install_nerd_font() {
+    # Homebrew on Linux has no cask support, so the Hurmit Nerd Font (a cask
+    # font on macOS) has to be installed manually from the nerd-fonts release.
+    local font_dir="$HOME/.local/share/fonts"
+    if fc-list 2>/dev/null | grep -qi "Hurmit Nerd Font"; then
+        echo -e "${GREEN}--- Hurmit Nerd Font already installed, skipping ---${NC}"
+        return
+    fi
+
+    echo -e "${BLUE}--- Installing Hurmit Nerd Font ---${NC}"
+
+    if ! command -v unzip &> /dev/null; then
+        echo -e "- Installing unzip via apt..."
+        sudo apt-get update
+        sudo apt-get install -y unzip
+    fi
+
+    mkdir -p "$font_dir"
+    local tmp
+    tmp="$(mktemp -d)"
+    curl -fsSL -o "$tmp/Hermit.zip" \
+        https://github.com/ryanoasis/nerd-fonts/releases/latest/download/Hermit.zip
+    unzip -o -q "$tmp/Hermit.zip" -d "$font_dir"
+    rm -rf "$tmp"
+    # Best-effort: the font files are already in place; a stale/unwritable
+    # fontconfig cache is non-fatal (it rebuilds lazily) and must not abort
+    # the script under `set -e`.
+    fc-cache -f > /dev/null 2>&1 || echo -e "${YELLOW}- fc-cache reported an error; fonts are installed and the cache will rebuild on next use${NC}"
+    echo -e "${GREEN}- Hurmit Nerd Font installed!${NC}"
 }
 
 link_dir() {
@@ -170,7 +247,7 @@ setup_git() {
     # Add include directive to global gitconfig if not already present
     if ! git config --global --get-all include.path | grep -q "dotfiles/git/gitconfig"; then
         echo -e "- Adding dotfiles git config include..."
-        git config --global include.path ~/dotfiles/git/gitconfig
+        git config --global include.path "$DOTFILES_DIR/git/gitconfig"
         echo -e "${GREEN}- Git configuration setup complete!${NC}"
     else
         echo -e "${GREEN}- Git configuration already setup, skipping${NC}"
@@ -180,13 +257,9 @@ setup_git() {
 setup_links() {
     echo -e "${BLUE}--- Linking dotfiles ---${NC}"
 
-    # Standard config directories
-    link_dir "alacritty" "$HOME/.config/alacritty"
+    # Standard XDG config directories (Linux)
     link_dir "nvim" "$HOME/.config/nvim"
-    link_dir "nu" "$HOME/Library/Application Support/nushell"
-
-    # iTerm2 profile configuration
-    link_dir "iterm2/nushell-dark.json" "$HOME/Library/Application Support/iTerm2/DynamicProfiles/nushell-dark.json"
+    link_dir "nu" "$HOME/.config/nushell"
 
     # WezTerm configuration
     link_file "wezterm/wezterm.lua" "$HOME/.wezterm.lua"
@@ -213,7 +286,7 @@ setup_node() {
 setup_coding_agents() {
     echo -e "${BLUE}--- Installing Coding Agents ---${NC}"
 
-    # Install Claude Code via the native installer
+    # Install Claude Code via the native installer (no cask support on Linux)
     if command -v claude &> /dev/null; then
         echo -e "${GREEN}- Claude Code already installed, skipping${NC}"
     else
@@ -251,17 +324,26 @@ upgrade_homebrew() {
 show_post_install_notes() {
     echo -e "\n${GREEN}=== Setup Complete! ===${NC}"
     echo -e "\n${YELLOW}Post-installation notes:${NC}"
-    echo -e "${YELLOW}1. Restart iTerm2 and select the 'Nushell Dark' profile${NC}"
-    echo -e "${YELLOW}2. Alacritty config is linked in case you want to use it on macOS${NC}"
+    echo -e "1. Log out and back in so GUI-launched terminals pick up Homebrew on"
+    echo -e "   PATH (added to ~/.profile). Until then, WezTerm can't find 'nu'."
+    echo -e "   For the current shell: source ~/.profile"
+    echo -e "2. To set Nushell as your default shell, first register it, then chsh:"
+    echo -e "     command -v nu | sudo tee -a /etc/shells"
+    echo -e "     chsh -s \"\$(command -v nu)\""
+    echo -e "   (chsh rejects shells not listed in /etc/shells)"
+    echo -e "3. WezTerm and Nushell configs are linked and ready to use"
 }
 
 # Main execution
 main() {
-    echo -e "${GREEN}=== macOS Dotfiles Setup ===${NC}"
+    echo -e "${GREEN}=== Linux Dotfiles Setup ===${NC}"
 
     install_homebrew
+    load_homebrew_env
+    persist_homebrew_env
     install_deps
-    install_iterm2
+    install_wezterm
+    install_nerd_font
     upgrade_homebrew
     setup_node
     setup_coding_agents

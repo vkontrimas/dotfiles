@@ -19,20 +19,34 @@
 
 use std/dirs
 
-# Setup Homebrew (macOS only)
-if $nu.os-info.name == 'macos' {
-    let brew_path = if ($nu.os-info.arch == 'aarch64') { '/opt/homebrew/bin/brew' } else { '/usr/local/bin/brew' }
+# Setup Homebrew (macOS and Linux)
+# macOS uses /opt/homebrew (Apple Silicon) or /usr/local (Intel); Linuxbrew
+# installs to /home/linuxbrew/.linuxbrew (or ~/.linuxbrew) and is not on PATH
+# by default.
+let homebrew_prefix = if $nu.os-info.name == 'macos' {
+    if ($nu.os-info.arch == 'aarch64') { '/opt/homebrew' } else { '/usr/local' }
+} else if $nu.os-info.name == 'linux' {
+    if ('/home/linuxbrew/.linuxbrew/bin/brew' | path exists) {
+        '/home/linuxbrew/.linuxbrew'
+    } else {
+        $"($env.HOME)/.linuxbrew"
+    }
+} else {
+    null
+}
+
+if $homebrew_prefix != null {
+    let brew_path = $"($homebrew_prefix)/bin/brew"
     if ($brew_path | path exists) {
-        ^$brew_path shellenv | lines | each { |line| 
+        ^$brew_path shellenv | lines | each { |line|
             let parts = ($line | parse --regex 'export (?P<name>\w+)="?(?P<value>[^"]*)"?')
             if not ($parts | is-empty) {
                 let var = $parts | get 0
                 load-env {($var.name): ($var.value)}
             }
         }
-        
+
         # Add Homebrew bin paths to PATH
-        let homebrew_prefix = if ($nu.os-info.arch == 'aarch64') { '/opt/homebrew' } else { '/usr/local' }
         $env.PATH = $env.PATH | prepend [$"($homebrew_prefix)/bin", $"($homebrew_prefix)/sbin"]
     }
 }

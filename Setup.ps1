@@ -280,21 +280,28 @@ function setup-node {
     npm --version
 }
 
-function setup-claude-code {
-    Write-ColorHost "--- Installing Claude Code ---" "Blue"
-    
-    # Check if Claude Code is already installed
+function setup-coding-agents {
+    Write-ColorHost "--- Installing Coding Agents ---" "Blue"
+
+    # Install Claude Code via native installer
     if (Get-Command claude -ErrorAction SilentlyContinue) {
         Write-ColorHost "- Claude Code already installed, skipping" "Green"
-        return
+    } else {
+        Write-Host "- Installing Claude Code..."
+        irm https://claude.ai/install.ps1 | iex
+        Write-ColorHost "- Claude Code installation complete!" "Green"
+        claude --version
     }
-    
-    # Install Claude Code via npm
-    Write-Host "- Installing Claude Code via npm..."
-    npm install -g '@anthropic-ai/claude-code'
-    
-    Write-ColorHost "- Claude Code installation complete!" "Green"
-    claude --version
+
+    # Install Pi Coding Agent
+    if (Get-Command pi -ErrorAction SilentlyContinue) {
+        Write-ColorHost "- Pi already installed, skipping" "Green"
+    } else {
+        Write-Host "- Installing Pi via npm..."
+        npm install -g @earendil-works/pi-coding-agent
+        Write-ColorHost "- Pi installation complete!" "Green"
+        pi --version
+    }
 }
 
 function setup-msvc-environment {
@@ -395,7 +402,7 @@ else {
     install-deps
     upgrade-scoop
     setup-node
-    setup-claude-code
+    setup-coding-agents
     setup-msvc-environment
     setup-git
     setup-alacritty-context-menu
