@@ -58,7 +58,6 @@ function install-deps {
         "wezterm-nightly"
         "neovim"
         "nu"
-        "obsidian"
     )
 }
 
