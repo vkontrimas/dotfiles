@@ -78,7 +78,6 @@ install_deps() {
 
     # Install GUI applications via cask
     brew install --cask \
-        obsidian \
         wezterm
 }
 
