@@ -124,6 +124,32 @@ alias tree = tre
 
 alias fcd = cd (fd -t d | fzf)
 
+$env.config.hooks.env_change.PWD = (
+    $env.config.hooks.env_change.PWD? | append {
+        code: {|| $"($env.PWD)\n" | save --append ($nu.data-dir | path join "hcd_history.txt")}
+    }
+)
+
+def --env hcd [] {
+    let hist_file = $nu.data-dir | path join "hcd_history.txt"
+    if not ($hist_file | path exists) {
+        print "No directory history yet — visit some directories first."
+        return
+    }
+    let dir = (
+        open $hist_file
+        | lines
+        | reverse
+        | uniq
+        | where { |p| $p | path exists }
+        | str join "\n"
+        | fzf
+    )
+    if ($dir | is-not-empty) {
+        cd $dir
+    }
+}
+
 def __dirs_index_fzf [] {
     # Returns index selected via fzf
     let selected_path = dirs | get path | str join "\n" | fzf
