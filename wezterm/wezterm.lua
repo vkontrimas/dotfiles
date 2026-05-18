@@ -47,6 +47,27 @@ config.keys = {
     mods = 'CTRL|SHIFT|ALT',
     action = wezterm.action.SplitVertical { domain = 'CurrentPaneDomain' },
   },
+  -- Tabs
+  {
+    key = 't',
+    mods = 'CTRL|ALT',
+    action = wezterm.action.SpawnTab 'CurrentPaneDomain',
+  },
+  {
+    key = 'w',
+    mods = 'CTRL|ALT',
+    action = wezterm.action.CloseCurrentTab { confirm = false },
+  },
+  {
+    key = 'Tab',
+    mods = 'CTRL|ALT',
+    action = wezterm.action.ActivateTabRelative(1),
+  },
+  {
+    key = 'Tab',
+    mods = 'CTRL|SHIFT|ALT',
+    action = wezterm.action.ActivateTabRelative(-1),
+  },
   -- Navigate panes
   {
     key = 'LeftArrow',
