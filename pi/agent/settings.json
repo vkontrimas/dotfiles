@@ -6,5 +6,5 @@
     "npm:@juicesharp/rpiv-web-tools",
     "npm:@marcfargas/pi-heartbeat"
   ],
-  "hideThinkingBlock": false
+  "hideThinkingBlock": true
 }

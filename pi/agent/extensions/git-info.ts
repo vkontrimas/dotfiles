@@ -11,7 +11,7 @@ export default function (pi: ExtensionAPI) {
     const status = (message.details as any)?.status || "";
     const branch = (message.details as any)?.branch || "";
 
-    const prefix = theme.fg("muted", "  Git status updated");
+    const prefix = theme.fg("muted", " Git status updated");
     return new Text(prefix, 0, 0);
   });
 
