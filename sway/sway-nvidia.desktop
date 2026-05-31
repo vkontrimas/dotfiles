@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=Sway (NVIDIA)
+Comment=An i3-compatible Wayland compositor (with NVIDIA workaround)
+Exec=/home/kinetic/.config/sway/sway-launch.sh
+Type=Application
+DesktopNames=sway;wlroots
