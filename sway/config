@@ -21,14 +21,21 @@ set $menu wmenu-run
 
 ### Output configuration
 
-# Default wallpaper (more resolutions in /usr/share/backgrounds/sway/)
-output * bg /usr/share/backgrounds/sway/Sway_Wallpaper_Blue_1920x1080.png fill
-#
-# Per-output configuration example:
-#
-#   output HDMI-A-1 resolution 1920x1080 position 1920,0
-#
-# List outputs with: swaymsg -t get_outputs
+# DP-2: Main display — 4K @ 144Hz with adaptive sync
+output DP-2 {
+    res 3840x2160@144Hz
+    position 2160,0
+    adaptive_sync enabled
+    scale 1.5
+}
+
+# DP-1: Portrait display to the left
+output DP-1 {
+    res 2160x3840
+    transform 270
+    position 0,0
+    scale 1.5
+}
 
 ### Idle / lock configuration
 #
