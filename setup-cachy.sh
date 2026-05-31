@@ -88,7 +88,9 @@ install_deps() {
         just \
         neovim \
         nushell \
-        tree-sitter-cli || true
+        tree-sitter-cli \
+        sway \
+        alacritty || true
 
     # Nerd Font (Hurmit)
     if pacman_installed otf-hermit-nerd; then
@@ -201,9 +203,26 @@ setup_links() {
     # Standard XDG config directories (Linux)
     link_dir "nvim" "$HOME/.config/nvim"
     link_dir "nu" "$HOME/.config/nushell"
+    link_dir "sway" "$HOME/.config/sway"
+    link_dir "alacritty" "$HOME/.config/alacritty"
 
-    # WezTerm configuration
-    link_file "wezterm/wezterm.lua" "$HOME/.wezterm.lua"
+    # Sway NVIDIA wrapper — must be executable
+    local sway_wrapper="$HOME/.config/sway/sway-launch.sh"
+    if [[ -f "$sway_wrapper" ]]; then
+        chmod +x "$sway_wrapper"
+    fi
+
+    # Ly custom session (overrides /usr/share/wayland-sessions/sway.desktop)
+    local ly_custom="/etc/ly/custom-sessions"
+    if [[ -d "$ly_custom" ]]; then
+        local full_desktop="$DOTFILES_DIR/sway/sway-nvidia.desktop"
+        if [[ -f "$ly_custom/sway-nvidia.desktop" ]] && diff -q "$full_desktop" "$ly_custom/sway-nvidia.desktop" &>/dev/null; then
+            echo -e "${GREEN}- Ly custom sway-nvidia.desktop already in place, skipping${NC}"
+        else
+            echo -e "${BLUE}--- Installing Ly custom sway-nvidia.desktop (NVIDIA support) ---${NC}"
+            sudo cp "$full_desktop" "$ly_custom/sway-nvidia.desktop"
+        fi
+    fi
 }
 
 setup_node() {

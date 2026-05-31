@@ -1,19 +1,23 @@
-[general]
-live_config_reload = true
-working_directory = "%USERPROFILE%"
-import = ["ayu_dark.toml"]
-
-[terminal]
-shell = "nu"
 
 [window]
 title = "Term"
-opacity = 1
 dimensions = { columns = 120, lines = 40 }
 padding = { x = 15, y = 15 }
 
 [font]
 normal = { family = "Hurmit Nerd Font Mono", style = "Regular" }
 size = 11
-offset = { x = 1, y = 0 }
+
+[terminal.shell]
+program = "nu"
+
+[[keyboard.bindings]]
+key = "Return"
+mods = "Shift"
+chars = "\u001B\r"
+
+[general]
+import = ["ayu_dark.toml"]
+
+[terminal]
 
