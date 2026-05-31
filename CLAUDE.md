@@ -29,6 +29,17 @@ This is a personal dotfiles repository for cross-platform development environmen
 - Links configuration directories
 - Use `--force` to overwrite existing configurations
 
+### CachyOS Setup
+```bash
+./setup-cachy.sh [--force]
+```
+- Installs dependencies via pacman (fnm, fd, eza, bat, fzf, ripgrep, tre, git-delta, graphviz, just, neovim, nushell, otf-hermit-nerd)
+- Sets up Node.js via fnm
+- Installs Claude Code via npm
+- Links configuration directories
+- Use `--force` to overwrite existing configurations
+- Script is idempotent — safe to run multiple times
+
 ## Architecture
 
 ### Configuration Structure
@@ -58,7 +69,7 @@ The setup installs and configures:
 - **Terminal**: Alacritty (Windows/Linux) or iTerm2 (macOS)
 - **Editor**: Neovim
 - **Node.js**: Managed via fnm
-- **Package Managers**: Scoop (Windows), Homebrew (macOS)
+- **Package Managers**: Scoop (Windows), Homebrew (macOS), pacman (CachyOS)
 - **Development Tools**: Git, Claude Code, modern Unix tools
 
 ### Available CLI Tools
