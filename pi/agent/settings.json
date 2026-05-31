@@ -1,10 +1,10 @@
 {
-  "lastChangelogVersion": "0.75.3",
+  "lastChangelogVersion": "0.78.0",
   "defaultProvider": "vllm-dual",
   "defaultModel": "qwen3.6-27b-autoround",
   "packages": [
     "npm:@juicesharp/rpiv-web-tools",
     "npm:@marcfargas/pi-heartbeat"
   ],
-  "hideThinkingBlock": true
+  "hideThinkingBlock": false
 }
