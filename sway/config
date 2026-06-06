@@ -37,9 +37,9 @@ output DP-1 {
 # up 100px to match physical alignment.
 output DP-2 {
     res 3840x2160@144Hz
-    position 1440,460
+    position 1440,360
     adaptive_sync enabled
-    scale 1.5
+    scale 1.25
 }
 
 ### Idle / lock configuration
