@@ -21,19 +21,24 @@ set $menu wmenu-run
 
 ### Output configuration
 
-# DP-2: Main display — 4K @ 144Hz with adaptive sync
-output DP-2 {
-    res 3840x2160@144Hz
-    position 2160,0
-    adaptive_sync enabled
+# DP-1: Portrait display to the left
+# Native mode is 3840x2160; transform 270 rotates it to portrait.
+# With scale 1.5 the logical size is 1440x2560, spanning x:0-1440.
+output DP-1 {
+    res 3840x2160
+    transform 270
+    position 0,0
     scale 1.5
 }
 
-# DP-1: Portrait display to the left
-output DP-1 {
-    res 2160x3840
-    transform 270
-    position 0,0
+# DP-2: Main display in the middle — 4K @ 144Hz with adaptive sync.
+# Logical size 2560x1440 at scale 1.5; placed flush to the right of DP-1
+# and vertically centered against it: (2560 - 1440) / 2 = 560, nudged
+# up 100px to match physical alignment.
+output DP-2 {
+    res 3840x2160@144Hz
+    position 1440,460
+    adaptive_sync enabled
     scale 1.5
 }
 
