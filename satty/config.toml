@@ -1,8 +1,9 @@
 [general]
 fullscreen = true
-early-exit = true
+early-exit = false
 copy-command = "wl-copy"
-output-filename = "~/screenshots/satty-%Y%m%d-%H:%M:%S.png"
-actions-on-enter = ["save-to-clipboard", "save-to-file", "exit"]
-actions-on-escape = ["save-to-clipboard", "exit"]
+output-filename = "/home/kinetic/screenshots/satty-%d-%b-%Y-%H%M%S.png"
+save-after-copy = true
+actions-on-enter = ["save-to-clipboard", "exit"]
+actions-on-escape = ["exit"]
 no-window-decoration = true
