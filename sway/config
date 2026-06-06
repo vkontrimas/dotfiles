@@ -78,8 +78,9 @@ floating_modifier $mod normal
 bindsym $mod+Shift+c reload
 bindsym $mod+Shift+e exec swaynag -t warning -m 'Exit sway?' -B 'Yes' 'swaymsg exit'
 
-# Screenshot (grim + slurp + satty)
-bindsym $mod+Shift+s exec grim -g "$(slurp -o -r -c '#ff0000ff')" -t ppm - | satty --filename -
+# Screenshot active output (grim + satty)
+# Finds the output containing the focused window via swaymsg, then captures it with grim and opens in satty.
+bindsym $mod+Shift+s exec grim -o "$(swaymsg -t get_tree | jq -r '[.nodes[] | select(.type=="output") | select((recurse(.nodes[]?) | select(.focused == true)) | length > 0) | .name] | .[0]')" -t ppm - | satty --filename -
 
 # Focus
 bindsym $mod+$left focus left
