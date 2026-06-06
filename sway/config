@@ -78,6 +78,10 @@ floating_modifier $mod normal
 bindsym $mod+Shift+c reload
 bindsym $mod+Shift+e exec swaynag -t warning -m 'Exit sway?' -B 'Yes' 'swaymsg exit'
 
+# Screenshot (grim + slurp + satty)
+bindsym $mod+Shift+s exec grim -g "$(slurp -o -r -c '#ff0000ff')" -t ppm - | satty --filename - --fullscreen --output-filename ~/screenshots/satty-$(date '+%Y%m%d-%H:%M:%S').png
+for_window [class="satty"] move container to output DP-2
+
 # Focus
 bindsym $mod+$left focus left
 bindsym $mod+$down focus down
@@ -196,5 +200,10 @@ bar {
         inactive_workspace #32323200 #32323200 #5c5c5c
     }
 }
+
+### Window Config
+
+# Fix flameshot
+for_window [app_id="flameshot"] border pixel 0, floating enable, fullscreen disable, move absolute position 0 0
 
 include /etc/sway/config.d/*

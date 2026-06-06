@@ -205,6 +205,7 @@ setup_links() {
     link_dir "nu" "$HOME/.config/nushell"
     link_dir "sway" "$HOME/.config/sway"
     link_dir "alacritty" "$HOME/.config/alacritty"
+    link_dir "satty" "$HOME/.config/satty"
 
     # Sway NVIDIA wrapper — must be executable
     local sway_wrapper="$HOME/.config/sway/sway-launch.sh"
