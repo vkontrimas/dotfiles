@@ -1,0 +1,16 @@
+{
+  "name": "pi-qwedit",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "diff": "^5.1.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
+  "pi": {
+    "extensions": ["./index.ts"]
+  }
+}
