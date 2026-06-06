@@ -72,6 +72,7 @@ output DP-2 {
 
 # Basics
 bindsym $mod+Return exec $term
+bindsym $mod+t exec $term
 bindsym $mod+Shift+q kill
 bindsym $mod+d exec $menu
 floating_modifier $mod normal
@@ -135,22 +136,6 @@ bindsym $mod+Shift+space floating toggle
 bindsym $mod+space focus mode_toggle
 bindsym $mod+a focus parent
 
-# WezTerm-style keybindings (Ctrl+Alt+…)
-bindsym Control+Mod1+d splith
-bindsym Control+Shift+Mod1+d splitv
-bindsym Control+Mod1+t exec $term
-bindsym Control+Mod1+w kill
-bindsym Control+Mod1+Tab workspace next
-bindsym Control+Shift+Mod1+Tab workspace prev
-bindsym Control+Mod1+Left focus left
-bindsym Control+Mod1+Down focus down
-bindsym Control+Mod1+Up focus up
-bindsym Control+Mod1+Right focus right
-bindsym Control+Shift+Mod1+Left move left
-bindsym Control+Shift+Mod1+Down move down
-bindsym Control+Shift+Mod1+Up move up
-bindsym Control+Shift+Mod1+Right move right
-
 # Scratchpad
 bindsym $mod+Shift+minus move scratchpad
 bindsym $mod+minus scratchpad show
@@ -169,7 +154,6 @@ mode "resize" {
     bindsym Escape mode "default"
 }
 bindsym $mod+r mode "resize"
-bindsym Control+Mod1+r mode "resize"
 
 # Media keys (PipeWire/pulseaudio)
 bindsym --locked XF86AudioMute exec wpctl set-mute @DEFAULT_SINK@ toggle
