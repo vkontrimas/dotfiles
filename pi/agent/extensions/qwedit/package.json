@@ -2,6 +2,10 @@
   "name": "pi-qwedit",
   "private": true,
   "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
   "dependencies": {
     "diff": "^5.1.0"
   },
@@ -11,6 +15,12 @@
     "typebox": "*"
   },
   "pi": {
-    "extensions": ["./index.ts"]
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "devDependencies": {
+    "@vitest/eslint-plugin": "^1.6.19",
+    "vitest": "^4.1.8"
   }
 }

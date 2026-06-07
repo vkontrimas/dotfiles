@@ -56,6 +56,7 @@ interface FileResult {
   ok: boolean;
   diff?: string;
   error?: string;
+  errors?: string[];
   count?: number;
 }
 
@@ -112,48 +113,68 @@ function applyEdits(
   content: string,
   edits: Array<{ oldText: string; newText: string }>,
   filePath: string,
-): string {
+): { content: string | null; errors: string[] } {
   const matches: Array<{
+    editIndex: number;
     index: number;
     length: number;
     newText: string;
   }> = [];
+  const errors: string[] = [];
 
-  for (const e of edits) {
+  // Phase 1: find matches for each edit
+  for (let i = 0; i < edits.length; i++) {
+    const e = edits[i];
     if (!e.oldText) {
-      throw new Error(`oldText must not be empty in ${filePath}.`);
+      errors.push(`[edit ${i + 1}] oldText must not be empty in ${filePath}.`);
+      continue;
     }
     const m = findText(content, e.oldText);
     if (!m.found) {
-      throw new Error(
-        `Could not find the exact text in ${filePath}. The old text must match exactly including all whitespace and newlines.`,
+      const snippet = e.oldText.split('\n')[0].trim().slice(0, 80);
+      errors.push(
+        `[edit ${i + 1}] Could not find exact text in ${filePath}: "${snippet}${e.oldText.length > 80 ? '…' : ''}" — must match exactly including whitespace and newlines.`,
       );
+      continue;
     }
-    matches.push({ index: m.index, length: m.length, newText: e.newText });
+    matches.push({ editIndex: i, index: m.index, length: m.length, newText: e.newText });
   }
 
+  // Phase 2: check for overlaps among successful matches
   matches.sort((a, b) => a.index - b.index);
+  const failedIndices = new Set<number>();
   for (let i = 1; i < matches.length; i++) {
     if (matches[i - 1].index + matches[i - 1].length > matches[i].index) {
-      throw new Error(
-        `Edits overlap in ${filePath}. Merge them into one edit or target disjoint regions.`,
+      failedIndices.add(matches[i].editIndex);
+      const overlapIndices = [matches[i - 1].editIndex, matches[i].editIndex]
+        .map((idx) => idx + 1)
+        .join(", ");
+      errors.push(
+        `[edit ${overlapIndices}] Edits overlap in ${filePath}. Merge them into one edit or target disjoint regions.`,
       );
     }
+  }
+
+  // Phase 3: apply non-overlapping matches from back to front
+  const valid = matches.filter((m) => !failedIndices.has(m.editIndex));
+  if (valid.length === 0) {
+    return { content: null, errors };
   }
 
   let result = content;
-  for (let i = matches.length - 1; i >= 0; i--) {
-    const { index, length, newText } = matches[i];
+  for (let i = valid.length - 1; i >= 0; i--) {
+    const { index, length, newText } = valid[i];
     result = result.slice(0, index) + newText + result.slice(index + length);
   }
 
   if (result === content) {
-    throw new Error(
+    errors.push(
       `No changes made to ${filePath}. The replacement produced identical content.`,
     );
+    return { content: null, errors };
   }
 
-  return result;
+  return { content: result, errors };
 }
 
 // ── Diff ──────────────────────────────────────────────────────────────────
@@ -451,19 +472,26 @@ function renderDiff(diffText: string, theme: Theme): string {
 
 function buildFileBox(result: FileResult, theme: Theme): Box {
   const box = new Box(1, 1, (text) => text);
-  const isOk = result.ok;
-  const bgFn = isOk
-    ? (text: string) => theme.bg("toolSuccessBg", text)
-    : (text: string) => theme.bg("toolErrorBg", text);
+  const hasErrors = !result.ok || (result.errors?.length ?? 0) > 0;
+  const bgFn = hasErrors
+    ? (text: string) => theme.bg("toolErrorBg", text)
+    : (text: string) => theme.bg("toolSuccessBg", text);
   box.setBgFn(bgFn);
 
   const header = `${theme.fg("toolTitle", theme.bold("edit"))} ${theme.fg("accent", result.path)}`;
   box.addChild(new Text(header, 0, 0));
   box.addChild(new Spacer(1));
 
-  if (isOk && result.diff) {
+  if (result.ok && result.diff) {
     box.addChild(new Text(renderDiff(result.diff, theme), 0, 0));
-  } else if (!isOk && result.error) {
+  }
+
+  if (result.errors && result.errors.length > 0) {
+    box.addChild(new Spacer(1));
+    for (const e of result.errors) {
+      box.addChild(new Text(theme.fg("error", e), 0, 0));
+    }
+  } else if (!result.ok && result.error) {
     box.addChild(new Text(theme.fg("error", result.error), 0, 0));
   }
 
@@ -471,14 +499,26 @@ function buildFileBox(result: FileResult, theme: Theme): Box {
 }
 
 
-// ── Extension ─────────────────────────────────────────────────────────────
+// ── Test exports (not part of public API) ──────────────────────────────
+
+export {
+  resolvePath,
+  groupByPath,
+  findText,
+  applyEdits,
+  generateDiffString,
+  replaceTabs,
+  parseDiffLine,
+  mergeAdjacentChanges,
+};
+
 
 export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "edit",
     label: "edit",
     description:
-      "Edit files using exact text replacement. Each edit specifies its own path, allowing edits across multiple files in one call. Every edits[].oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit instead of emitting overlapping edits. Do not include large unchanged regions just to connect distant changes.",
+      "Edit files using exact text replacement. Each edit specifies its own path, allowing edits across multiple files in one call. Every edits[].oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit instead of emitting overlapping edits. Do not include large unchanged regions just to connect distant changes. If some edits fail, the successful ones are still applied — retry only the failed edits.",
     promptSnippet:
       "Make precise file edits with exact text replacement, including multiple edits across files in one call",
     promptGuidelines: [
@@ -525,26 +565,28 @@ export default function (pi: ExtensionAPI) {
 
               if (signal?.aborted) throw new Error("Operation aborted");
 
-              const newContent = applyEdits(raw, fileEdits, absPath);
+              const { content: newContent, errors: editErrors } = applyEdits(raw, fileEdits, absPath);
 
               if (signal?.aborted) throw new Error("Operation aborted");
 
-              await writeFile(absPath, newContent, "utf-8");
-              return raw;
+              if (newContent !== null) {
+                await writeFile(absPath, newContent, "utf-8");
+              }
+              return { raw, newContent, editErrors };
             },
           );
 
-          const newContent = (await readFile(absPath, "utf-8")).replace(
-            /^\uFEFF/,
-            "",
-          );
-          const diff = generateDiffString(originalContent, newContent);
+          const diff =
+            originalContent.newContent !== null
+              ? generateDiffString(originalContent.raw, originalContent.newContent)
+              : undefined;
 
           results.push({
             path: originalPath,
-            ok: true,
+            ok: originalContent.newContent !== null,
             diff,
             count: fileEdits.length,
+            errors: originalContent.editErrors,
           });
         } catch (err: any) {
           results.push({
@@ -560,13 +602,31 @@ export default function (pi: ExtensionAPI) {
       ctx.state.results = results;
 
       const success = results.filter((r) => r.ok);
-      const failed = results.filter((r) => !r.ok);
+      const allEditErrors: string[] = [];
+      for (const r of results) {
+        if (r.error) allEditErrors.push(`${r.path}: ${r.error}`);
+        if (r.errors) {
+          for (const e of r.errors) {
+            allEditErrors.push(`${r.path}: ${e}`);
+          }
+        }
+      }
 
-      const summary = `${success.length} file(s) edited`;
-      const detail = failed.length > 0 ? `, ${failed.length} failed` : "";
+      const lines: string[] = [];
+      lines.push(`${success.length} file(s) edited`);
+
+      if (allEditErrors.length > 0) {
+        lines.push("");
+        lines.push(`${allEditErrors.length} edit(s) failed:`);
+        for (const e of allEditErrors) {
+          lines.push(`- ${e}`);
+        }
+      } else {
+        lines.push(`0 edit(s) failed`);
+      }
 
       return {
-        content: [{ type: "text", text: `${summary}${detail}` }],
+        content: [{ type: "text", text: lines.join("\n") }],
         details: { results },
       };
     },
