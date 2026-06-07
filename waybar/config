@@ -15,6 +15,9 @@
     "custom/llm-dual",
     "custom/llm-solo",
     "custom/llm-sep2",
+    "custom/pwr-label",
+    "custom/pwr-toggle",
+    "custom/pwr-sep",
     "clock",
     "tray"
   ],
@@ -66,6 +69,19 @@
     "on-click": "$HOME/.config/waybar/llm/.venv/bin/python $HOME/.config/waybar/llm/client.py toggle llamacpp/mtp"
   },
   "custom/llm-sep2": {
+    "format": "|"
+  },
+  "custom/pwr-label": {
+    "format": "PWR"
+  },
+  "custom/pwr-toggle": {
+    "exec": "$HOME/.config/waybar/scripts/power-profile.sh button",
+    "interval": 2,
+    "return-type": "json",
+    "format": "{}",
+    "on-click": "$HOME/.config/waybar/scripts/power-profile.sh toggle"
+  },
+  "custom/pwr-sep": {
     "format": "|"
   },
   "clock": {

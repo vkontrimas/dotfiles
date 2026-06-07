@@ -33,12 +33,14 @@ window#waybar {
 
 #custom-gpu-sep,
 #custom-llm-sep,
-#custom-llm-sep2 {
+#custom-llm-sep2,
+#custom-pwr-sep {
   padding: 0 8px;
   color: #5A6673;
 }
 
-#custom-llm-label {
+#custom-llm-label,
+#custom-pwr-label {
   padding: 0 8px 0 4px;
   color: #5A6378;
 }
@@ -90,6 +92,25 @@ window#waybar {
   min-width: 0;
   padding: 0;
   margin: 0;
+}
+
+/* ── PWR button ── */
+#custom-pwr-toggle {
+  padding: 2px 8px;
+  margin: 0 2px;
+  border-radius: 0;
+}
+
+/* Performance (green) */
+#custom-pwr-toggle.perf {
+  background-color: #70BF56;
+  color: #0D1017;
+}
+
+/* Balanced (red) */
+#custom-pwr-toggle.blnc {
+  background-color: #D95757;
+  color: #0D1017;
 }
 
 /* ── Workspace tabs ── */
