@@ -179,15 +179,6 @@ bindsym Print exec grim
 
 ### Status bar
 
-bar {
-    position top
-    status_command while date +'%Y-%m-%d %X'; do sleep 1; done
-    colors {
-        statusline #ffffff
-        background #323232
-        inactive_workspace #32323200 #32323200 #5c5c5c
-    }
-}
 
 ### Window Config
 
@@ -195,3 +186,5 @@ bar {
 for_window [app_id="flameshot"] border pixel 0, floating enable, fullscreen disable, move absolute position 0 0
 
 include /etc/sway/config.d/*
+exec ~/.config/waybar/llm/.venv/bin/python ~/.config/waybar/llm/daemon.py
+exec waybar

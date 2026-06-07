@@ -1,0 +1,91 @@
+* {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 14px;
+  border: none;
+}
+
+window#waybar {
+  background: #1e1e2e;
+  color: #cdd6f4;
+}
+
+.modules-right {
+  padding: 4px 8px;
+}
+
+#clock {
+  padding: 0 8px;
+}
+
+#tray {
+  padding: 0 8px;
+}
+
+#custom-gpu-label {
+  padding: 0 4px;
+  color: #a6adc8;
+}
+
+#custom-gpu-memory {
+  padding: 0 8px;
+}
+
+#custom-llm-sep,
+#custom-llm-sep2 {
+  padding: 0 8px;
+  color: #6c7086;
+}
+
+#custom-llm-label {
+  padding: 0 4px;
+  color: #a6adc8;
+}
+
+#custom-llm-status-err {
+  padding: 0 8px;
+  color: #f38ba8;
+}
+
+/* ── LLM buttons ── */
+#custom-llm-dual,
+#custom-llm-solo {
+  padding: 2px 8px;
+  margin: 0 2px;
+  border-radius: 4px;
+}
+
+/* Loaded (green) */
+#custom-llm-dual.loaded,
+#custom-llm-solo.loaded {
+  background-color: #a6e3a1;
+  color: #1e1e2e;
+}
+
+/* Loading (orange) */
+#custom-llm-dual.loading,
+#custom-llm-solo.loading {
+  background-color: #fab387;
+  color: #1e1e2e;
+}
+
+/* Unloaded (red) */
+#custom-llm-dual.unloaded,
+#custom-llm-solo.unloaded {
+  background-color: #f38ba8;
+  color: #1e1e2e;
+}
+
+/* Error (red) */
+#custom-llm-dual.error,
+#custom-llm-solo.error {
+  background-color: #f38ba8;
+  color: #1e1e2e;
+}
+
+/* Daemon offline — button shows nothing */
+#custom-llm-dual.offline,
+#custom-llm-solo.offline {
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+}
