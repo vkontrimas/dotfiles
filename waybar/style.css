@@ -1,16 +1,20 @@
 * {
-  font-family: "JetBrains Mono", monospace;
-  font-size: 14px;
+  font-family: "Hurmit Nerd Font Mono", monospace;
+  font-size: 12px;
   border: none;
+  margin: 0;
+  padding: 0;
 }
 
 window#waybar {
-  background: #1e1e2e;
-  color: #cdd6f4;
+  background: #0D1017;
+  color: #BFBDB6;
+  margin: 0;
+  padding: 0;
 }
 
 .modules-right {
-  padding: 4px 8px;
+  padding: 0 8px;
 }
 
 #clock {
@@ -21,29 +25,27 @@ window#waybar {
   padding: 0 8px;
 }
 
-#custom-gpu-label {
+#custom-gpu-label,
+#custom-ram-label {
   padding: 0 4px;
-  color: #a6adc8;
+  color: #5A6378;
 }
 
-#custom-gpu-memory {
-  padding: 0 8px;
-}
-
+#custom-gpu-sep,
 #custom-llm-sep,
 #custom-llm-sep2 {
   padding: 0 8px;
-  color: #6c7086;
+  color: #5A6673;
 }
 
 #custom-llm-label {
-  padding: 0 4px;
-  color: #a6adc8;
+  padding: 0 8px 0 4px;
+  color: #5A6378;
 }
 
 #custom-llm-status-err {
   padding: 0 8px;
-  color: #f38ba8;
+  color: #D95757;
 }
 
 /* ── LLM buttons ── */
@@ -51,35 +53,35 @@ window#waybar {
 #custom-llm-solo {
   padding: 2px 8px;
   margin: 0 2px;
-  border-radius: 4px;
+  border-radius: 0;
 }
 
 /* Loaded (green) */
 #custom-llm-dual.loaded,
 #custom-llm-solo.loaded {
-  background-color: #a6e3a1;
-  color: #1e1e2e;
+  background-color: #70BF56;
+  color: #0D1017;
 }
 
 /* Loading (orange) */
 #custom-llm-dual.loading,
 #custom-llm-solo.loading {
-  background-color: #fab387;
-  color: #1e1e2e;
+  background-color: #FFB454;
+  color: #0D1017;
 }
 
 /* Unloaded (red) */
 #custom-llm-dual.unloaded,
 #custom-llm-solo.unloaded {
-  background-color: #f38ba8;
-  color: #1e1e2e;
+  background-color: #D95757;
+  color: #0D1017;
 }
 
 /* Error (red) */
 #custom-llm-dual.error,
 #custom-llm-solo.error {
-  background-color: #f38ba8;
-  color: #1e1e2e;
+  background-color: #D95757;
+  color: #0D1017;
 }
 
 /* Daemon offline — button shows nothing */
@@ -88,4 +90,32 @@ window#waybar {
   min-width: 0;
   padding: 0;
   margin: 0;
+}
+
+/* ── Workspace tabs ── */
+#workspaces {
+  background-color: #10141C;
+  padding: 0;
+  border-radius: 0;
+}
+
+#workspaces button {
+  padding: 4px 8px;
+  margin: 0 1px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: #5A6673;
+  transition: none;
+}
+
+#workspaces button.focused {
+  background: #39BAE6;
+  color: #0D1017;
+}
+
+#workspaces button:hover {
+  box-shadow: inherit;
+  text-shadow: inherit;
+  color: #BFBDB6;
 }

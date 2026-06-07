@@ -3,6 +3,9 @@
   "position": "top",
   "modules-left": ["sway/workspaces"],
   "modules-right": [
+    "custom/ram-label",
+    "custom/ram-memory",
+    "custom/gpu-sep",
     "custom/gpu-label",
     "custom/gpu-memory",
     "custom/llm-sep",
@@ -20,7 +23,17 @@
   },
   "custom/gpu-memory": {
     "exec": "$HOME/.config/waybar/scripts/gpu-memory.sh",
-    "interval": 2
+    "interval": 5
+  },
+  "custom/gpu-sep": {
+    "format": "|"
+  },
+  "custom/ram-label": {
+    "format": "RAM"
+  },
+  "custom/ram-memory": {
+    "exec": "$HOME/.config/waybar/scripts/ram-memory.sh",
+    "interval": 5
   },
   "custom/llm-sep": {
     "format": "|"

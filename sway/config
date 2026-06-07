@@ -177,6 +177,15 @@ bindsym --locked XF86MonBrightnessUp exec brightnessctl set 5%+
 # Screenshot
 bindsym Print exec grim
 
+### Colors
+
+font pango:Hurmit Nerd Font Mono 10
+
+client.unfocused #10141C #141821 #5A6378 #141821 #5A6378
+client.focused #10141C #39BAE6 #0D1017 #39BAE6 #39BAE6
+client.focused_inactive #10141C #141821 #5A6378 #141821 #5A6378
+client.urgent #10141C #D95757 #D95757 #D95757 #D95757
+
 ### Status bar
 
 
