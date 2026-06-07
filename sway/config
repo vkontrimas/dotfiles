@@ -194,6 +194,9 @@ client.urgent #10141C #D95757 #D95757 #D95757 #D95757
 # Fix flameshot
 for_window [app_id="flameshot"] border pixel 0, floating enable, fullscreen disable, move absolute position 0 0
 
+# Steam friends list
+for_window [class="steam" title="^Friends List$"] floating enable, border normal, resize set 340px 550px
+
 include /etc/sway/config.d/*
 exec ~/.config/waybar/llm/.venv/bin/python ~/.config/waybar/llm/daemon.py
 exec waybar
