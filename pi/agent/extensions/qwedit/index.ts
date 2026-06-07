@@ -10,6 +10,7 @@ import type { Theme } from "@earendil-works/pi-tui";
 import { constants } from "node:fs";
 import { access, readFile, writeFile } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
+import { homedir } from "node:os";
 import { diffLines, diffWords } from "diff";
 
 // ── Schema ────────────────────────────────────────────────────────────────
@@ -61,6 +62,8 @@ interface FileResult {
 // ── Helpers ───────────────────────────────────────────────────────────────
 
 function resolvePath(filePath: string, cwd: string): string {
+  if (filePath === "~") return homedir();
+  if (filePath.startsWith("~/")) return resolve(homedir(), filePath.slice(2));
   if (isAbsolute(filePath)) return filePath;
   return resolve(cwd, filePath);
 }
