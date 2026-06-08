@@ -571,7 +571,7 @@ export default function (pi: ExtensionAPI) {
       const path = args?.path ?? "...";
       const headerBox = new Box(1, 1, (text) => text);
       headerBox.setBgFn((text) => theme.bg("toolPendingBg", text));
-      const header = `${theme.fg("toolTitle", theme.bold("edit"))}... ${theme.fg("accent", path)}`;
+      const header = `${theme.fg("toolTitle", theme.bold("edit"))} ${theme.fg("accent", path)}`;
       headerBox.addChild(new Text(header, 0, 0));
       return headerBox;
     },

@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.78.1",
+  "lastChangelogVersion": "0.79.0",
   "defaultProvider": "bifrost",
   "defaultModel": "vllm/qwen3.6-27b-autoround",
   "packages": [
