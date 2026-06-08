@@ -1,6 +1,6 @@
 /**
- * Multi-file edit tool — each edit specifies its own path.
- * Lets agents batch edits across multiple files in one call.
+ * Single-file edit tool — one edit per tool call.
+ * Each call targets exactly one file with one text replacement.
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
@@ -15,7 +15,7 @@ import { diffLines, diffWords } from "diff";
 
 // ── Schema ────────────────────────────────────────────────────────────────
 
-const editItemSchema = Type.Object(
+const parameters = Type.Object(
   {
     path: Type.String({
       description: "Path to the file to edit (relative or absolute)",
@@ -31,35 +31,6 @@ const editItemSchema = Type.Object(
   { additionalProperties: false },
 );
 
-const parameters = Type.Object({
-  edits: Type.Array(editItemSchema, {
-    description:
-      "One or more targeted replacements across one or more files. Each edit is matched against the original file (not incrementally). Do not include overlapping edits. Merge nearby changes into one edit.",
-  }),
-});
-
-// ── Types ─────────────────────────────────────────────────────────────────
-
-interface EditItem {
-  path: string;
-  oldText: string;
-  newText: string;
-}
-
-interface FileGroup {
-  originalPath: string;
-  edits: Array<{ oldText: string; newText: string }>;
-}
-
-interface FileResult {
-  path: string;
-  ok: boolean;
-  diff?: string;
-  error?: string;
-  errors?: string[];
-  count?: number;
-}
-
 // ── Helpers ───────────────────────────────────────────────────────────────
 
 function resolvePath(filePath: string, cwd: string): string {
@@ -69,112 +40,77 @@ function resolvePath(filePath: string, cwd: string): string {
   return resolve(cwd, filePath);
 }
 
-function groupByPath(
-  edits: EditItem[],
-  cwd: string,
-): Map<string, FileGroup> {
-  const groups = new Map<string, FileGroup>();
-  for (const e of edits) {
-    const abs = resolvePath(e.path, cwd);
-    if (!groups.has(abs))
-      groups.set(abs, { originalPath: e.path, edits: [] });
-    groups.get(abs)!.edits.push({
-      oldText: e.oldText,
-      newText: e.newText,
-    });
+function normText(s: string): string {
+  return (s
+    // NFKC normalization (decomposes compatibility characters)
+    .normalize("NFKC")
+    // Strip trailing whitespace per line
+    .split("\n")
+    .map((l) => l.trimEnd())
+    .join("\n")
+    // Smart single quotes → '
+    .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
+    // Smart double quotes → "
+    .replace(/[\u201C\u201D\u201E\u201F]/g, '"')
+    // Various dashes/hyphens → -
+    .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]/g, "-")
+    // Special spaces → regular space
+    .replace(/[\u00A0\u2002-\u200A\u202F\u205F\u3000]/g, " "));
+}
+
+function normalizeToLF(text: string): string {
+  return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+}
+
+function detectLineEnding(content: string): string {
+  const crlfIdx = content.indexOf("\r\n");
+  const lfIdx = content.indexOf("\n");
+  if (lfIdx === -1) return "\n";
+  if (crlfIdx === -1) return "\n";
+  return crlfIdx < lfIdx ? "\r\n" : "\n";
+}
+
+function restoreLineEndings(text: string, ending: string): string {
+  return ending === "\r\n" ? text.replace(/\n/g, "\r\n") : text;
+}
+
+function stripBom(content: string): { bom: string; text: string } {
+  return content.startsWith("\uFEFF")
+    ? { bom: "\uFEFF", text: content.slice(1) }
+    : { bom: "", text: content };
+}
+
+function countOccurrences(haystack: string, needle: string): number {
+  if (!needle) return Infinity;
+  let count = 0, pos = 0;
+  while ((pos = haystack.indexOf(needle, pos)) !== -1) {
+    count++;
+    pos += needle.length;
   }
-  return groups;
+  return count;
 }
 
 function findText(
   content: string,
   oldText: string,
-): { found: boolean; index: number; length: number } {
+): { found: boolean; index: number; length: number; occurrences: number; fuzzy: boolean } {
+  // Try exact match first
   const idx = content.indexOf(oldText);
-  if (idx !== -1)
-    return { found: true, index: idx, length: oldText.length };
-
-  const norm = (s: string) =>
-    s
-      .split("\n")
-      .map((l) => l.trimEnd())
-      .join("\n")
-      .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
-      .replace(/[\u201C\u201D\u201E\u201F]/g, '"');
-
-  const fIdx = norm(content).indexOf(norm(oldText));
-  if (fIdx !== -1)
-    return { found: true, index: fIdx, length: norm(oldText).length };
-
-  return { found: false, index: -1, length: 0 };
-}
-
-function applyEdits(
-  content: string,
-  edits: Array<{ oldText: string; newText: string }>,
-  filePath: string,
-): { content: string | null; errors: string[] } {
-  const matches: Array<{
-    editIndex: number;
-    index: number;
-    length: number;
-    newText: string;
-  }> = [];
-  const errors: string[] = [];
-
-  // Phase 1: find matches for each edit
-  for (let i = 0; i < edits.length; i++) {
-    const e = edits[i];
-    if (!e.oldText) {
-      errors.push(`[edit ${i + 1}] oldText must not be empty in ${filePath}.`);
-      continue;
-    }
-    const m = findText(content, e.oldText);
-    if (!m.found) {
-      const snippet = e.oldText.split('\n')[0].trim().slice(0, 80);
-      errors.push(
-        `[edit ${i + 1}] Could not find exact text in ${filePath}: "${snippet}${e.oldText.length > 80 ? '…' : ''}" — must match exactly including whitespace and newlines.`,
-      );
-      continue;
-    }
-    matches.push({ editIndex: i, index: m.index, length: m.length, newText: e.newText });
+  if (idx !== -1) {
+    const occ = countOccurrences(content, oldText);
+    return { found: true, index: idx, length: oldText.length, occurrences: occ, fuzzy: false };
   }
 
-  // Phase 2: check for overlaps among successful matches
-  matches.sort((a, b) => a.index - b.index);
-  const failedIndices = new Set<number>();
-  for (let i = 1; i < matches.length; i++) {
-    if (matches[i - 1].index + matches[i - 1].length > matches[i].index) {
-      failedIndices.add(matches[i].editIndex);
-      const overlapIndices = [matches[i - 1].editIndex, matches[i].editIndex]
-        .map((idx) => idx + 1)
-        .join(", ");
-      errors.push(
-        `[edit ${overlapIndices}] Edits overlap in ${filePath}. Merge them into one edit or target disjoint regions.`,
-      );
-    }
+  // Try fuzzy match in normalized space
+  const nContent = normText(content);
+  const nOldText = normText(oldText);
+  const fIdx = nContent.indexOf(nOldText);
+  if (fIdx !== -1) {
+    const occ = countOccurrences(nContent, nOldText);
+    return { found: true, index: fIdx, length: nOldText.length, occurrences: occ, fuzzy: true };
   }
 
-  // Phase 3: apply non-overlapping matches from back to front
-  const valid = matches.filter((m) => !failedIndices.has(m.editIndex));
-  if (valid.length === 0) {
-    return { content: null, errors };
-  }
-
-  let result = content;
-  for (let i = valid.length - 1; i >= 0; i--) {
-    const { index, length, newText } = valid[i];
-    result = result.slice(0, index) + newText + result.slice(index + length);
-  }
-
-  if (result === content) {
-    errors.push(
-      `No changes made to ${filePath}. The replacement produced identical content.`,
-    );
-    return { content: null, errors };
-  }
-
-  return { content: result, errors };
+  return { found: false, index: -1, length: 0, occurrences: 0, fuzzy: false };
 }
 
 // ── Diff ──────────────────────────────────────────────────────────────────
@@ -202,7 +138,6 @@ function generateDiffString(
 
     if (part.added) {
       const lines = part.value.split("\n");
-      // diffLines includes trailing newline, so last element is ""
       const count = lines.length > 1 && lines[lines.length - 1] === ""
         ? lines.length - 1
         : lines.length;
@@ -224,7 +159,6 @@ function generateDiffString(
       }
       lastWasChange = true;
     } else {
-      // Context — part.count gives the number of equal lines
       const count = part.count ?? part.value.split("\n").length;
       const lines = part.value.split("\n");
       const lineCount =
@@ -319,9 +253,6 @@ function renderIntraLineDiff(
   theme: Theme,
 ): { removedLine: string; addedLine: string } {
   let wordDiff = diffWords(oldContent, newContent);
-
-  // Merge consecutive removed/added tokens separated only by whitespace common tokens,
-  // so that e.g. "hello world" → "goodbye universe" highlights the entire phrase as one block.
   wordDiff = mergeAdjacentChanges(wordDiff);
 
   let removedLine = "";
@@ -367,8 +298,6 @@ function mergeAdjacentChanges(parts: DiffPart[]): DiffPart[] {
   while (i < parts.length) {
     const part = parts[i];
     if (part.added || part.removed) {
-      // Merge a run of (removed/added/whitespace-common) tokens into
-      // one removed block and one added block.
       let removedValue = "";
       let addedValue = "";
       while (i < parts.length) {
@@ -470,202 +399,167 @@ function renderDiff(diffText: string, theme: Theme): string {
   return result.join("\n");
 }
 
-function buildFileBox(result: FileResult, theme: Theme): Box {
+function buildResultBox(
+  path: string,
+  ok: boolean,
+  diff: string | undefined,
+  error: string | undefined,
+  theme: Theme,
+): Box {
   const box = new Box(1, 1, (text) => text);
-  const hasErrors = !result.ok || (result.errors?.length ?? 0) > 0;
-  const bgFn = hasErrors
-    ? (text: string) => theme.bg("toolErrorBg", text)
-    : (text: string) => theme.bg("toolSuccessBg", text);
+  const bgFn = ok
+    ? (text: string) => theme.bg("toolSuccessBg", text)
+    : (text: string) => theme.bg("toolErrorBg", text);
   box.setBgFn(bgFn);
 
-  const header = `${theme.fg("toolTitle", theme.bold("edit"))} ${theme.fg("accent", result.path)}`;
+  const header = `${theme.fg("toolTitle", theme.bold("edit"))} ${theme.fg("accent", path)}`;
   box.addChild(new Text(header, 0, 0));
   box.addChild(new Spacer(1));
 
-  if (result.ok && result.diff) {
-    box.addChild(new Text(renderDiff(result.diff, theme), 0, 0));
+  if (ok && diff) {
+    box.addChild(new Text(renderDiff(diff, theme), 0, 0));
   }
 
-  if (result.errors && result.errors.length > 0) {
-    box.addChild(new Spacer(1));
-    for (const e of result.errors) {
-      box.addChild(new Text(theme.fg("error", e), 0, 0));
-    }
-  } else if (!result.ok && result.error) {
-    box.addChild(new Text(theme.fg("error", result.error), 0, 0));
+  if (error) {
+    box.addChild(new Text(theme.fg("error", error), 0, 0));
   }
 
   return box;
 }
 
-
 // ── Test exports (not part of public API) ──────────────────────────────
 
 export {
   resolvePath,
-  groupByPath,
   findText,
-  applyEdits,
   generateDiffString,
   replaceTabs,
   parseDiffLine,
   mergeAdjacentChanges,
+  normalizeToLF,
+  detectLineEnding,
+  restoreLineEndings,
+  stripBom,
+  countOccurrences,
+  normText,
 };
 
-
 export default function (pi: ExtensionAPI) {
-  // Module-level state for diff inclusion toggle
-  let includeDiffs = true;
-
-  // Reconstruct state from session on startup
-  pi.on("session_start", async (_event, ctx) => {
-    for (const entry of ctx.sessionManager.getBranch()) {
-      if (entry.type === "message" && entry.message.role === "toolResult") {
-        if (entry.message.toolName === "edit") {
-          const details = entry.message.details as any;
-          if (details !== undefined && "includeDiffs" in details) {
-            includeDiffs = details.includeDiffs;
-          }
-        }
-      }
-    }
-  });
-
-  pi.registerCommand("edit-diffs", {
-    description: "Toggle whether edit tool includes diffs in LLM context",
-    handler: async (_args, ctx) => {
-      includeDiffs = !includeDiffs;
-      return ctx.ui.notify(`Edit diffs in context: ${includeDiffs ? "on" : "off"}`, "info");
-    },
-  });
-
   pi.registerTool({
     name: "edit",
     label: "edit",
     description:
-      "Edit files using exact text replacement. Each edit specifies its own path, allowing edits across multiple files in one call. Every edits[].oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit instead of emitting overlapping edits. Do not include large unchanged regions just to connect distant changes. If some edits fail, the successful ones are still applied — retry only the failed edits.",
+      "Edit a file using exact text replacement. One edit per tool call. " +
+      "Each call targets a single file with one oldText/newText pair. " +
+      "The oldText must match a unique, non-overlapping region of the file. " +
+      "Keep oldText as small as possible while still being unique. " +
+      "Do not pad with large unchanged regions.",
     promptSnippet:
-      "Make precise file edits with exact text replacement, including multiple edits across files in one call",
+      "Make precise file edits with exact text replacement. One edit per tool call.",
     promptGuidelines: [
-      "Use edit for precise changes (edits[].oldText must match exactly)",
-      "Each edit includes its own path — you can edit multiple files in one call",
-      "When changing multiple locations in the same file, use multiple edits with the same path",
-      "Each edits[].oldText is matched against the original file, not after earlier edits. Do not emit overlapping edits. Merge nearby changes into one edit.",
-      "Keep edits[].oldText as small as possible while still being unique in the file. Do not pad with large unchanged regions.",
+      "Use edit for precise changes (oldText must match exactly)",
+      "Each tool call edits one file with one replacement",
+      "Keep oldText as small as possible while still being unique",
+      "Do not include large unchanged regions just to connect changes",
     ],
     parameters,
     renderShell: "self",
 
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-      const edits = params.edits;
-      if (!Array.isArray(edits) || edits.length === 0) {
-        throw new Error("edits must contain at least one replacement.");
+      const { path, oldText, newText } = params;
+
+      if (!oldText) {
+        throw new Error("oldText must not be empty.");
       }
 
-      const groups = groupByPath(edits, ctx.cwd);
-      const results: FileResult[] = [];
+      const absPath = resolvePath(path, ctx.cwd);
 
-      for (const [absPath, { originalPath, edits: fileEdits }] of groups) {
-        if (signal?.aborted) throw new Error("Operation aborted");
+      try {
+        const { baseContent, newContent, errorMsg } = await withFileMutationQueue(
+          absPath,
+          async () => {
+            try {
+              await access(absPath, constants.R_OK | constants.W_OK);
+            } catch (err: any) {
+              const code = err?.code ?? String(err);
+              throw new Error(`Could not edit file: ${path}. ${code}.`);
+            }
 
-        try {
-          const originalContent = await withFileMutationQueue(
-            absPath,
-            async () => {
-              try {
-                await access(absPath, constants.R_OK | constants.W_OK);
-              } catch (err: any) {
-                const code = err?.code ?? String(err);
-                throw new Error(
-                  `Could not edit file: ${originalPath}. ${code}.`,
-                );
-              }
+            if (signal?.aborted) throw new Error("Operation aborted");
 
-              if (signal?.aborted) throw new Error("Operation aborted");
+            // Read and strip BOM
+            const rawBuf = (await readFile(absPath, "utf-8"));
+            const { bom, text: noBom } = stripBom(rawBuf);
 
-              const raw = (await readFile(absPath, "utf-8")).replace(
-                /^\uFEFF/,
-                "",
+            if (signal?.aborted) throw new Error("Operation aborted");
+
+            // Detect original line ending, then normalize to LF for matching
+            const originalEnding = detectLineEnding(noBom);
+            const lfContent = normalizeToLF(noBom);
+
+            // Normalize oldText and newText to LF for matching workspace
+            const lfOldText = normalizeToLF(oldText);
+            const lfNewText = normalizeToLF(newText);
+
+            const m = findText(lfContent, lfOldText);
+            if (!m.found) {
+              const snippet = oldText.split("\n")[0].trim().slice(0, 80);
+              throw new Error(
+                `Could not find exact text in ${path}: "${snippet}${oldText.length > 80 ? '…' : ''}" — must match exactly including whitespace and newlines.`,
               );
+            }
 
-              if (signal?.aborted) throw new Error("Operation aborted");
+            if (m.occurrences > 1) {
+              const snippet = oldText.split("\n")[0].trim().slice(0, 80);
+              throw new Error(
+                `Found ${m.occurrences} occurrences of "${snippet}${oldText.length > 80 ? '…' : ''}" in ${path}. oldText must be unique — add surrounding context to disambiguate.`,
+              );
+            }
 
-              const { content: newContent, errors: editErrors } = applyEdits(raw, fileEdits, absPath);
+            // On fuzzy path, work in normalized content and normalize newText too
+            const targetContent = m.fuzzy ? normText(lfContent) : lfContent;
+            const finalNewText = m.fuzzy ? normText(lfNewText) : lfNewText;
+            const newContent =
+              targetContent.slice(0, m.index) + finalNewText + targetContent.slice(m.index + m.length);
 
-              if (signal?.aborted) throw new Error("Operation aborted");
+            if (newContent === targetContent) {
+              throw new Error(
+                `No changes made to ${path}. The replacement produced identical content.`,
+              );
+            }
 
-              if (newContent !== null) {
-                await writeFile(absPath, newContent, "utf-8");
-              }
-              return { raw, newContent, editErrors };
+            // Restore original line endings and re-add BOM before writing
+            const output = bom + restoreLineEndings(newContent, originalEnding);
+            await writeFile(absPath, output, "utf-8");
+
+            // Return LF-normalized versions for diff generation
+            return { baseContent: targetContent, newContent, errorMsg: undefined };
+          },
+        );
+
+        const diff = generateDiffString(baseContent, newContent);
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: `<edit_success path="${path}">\n${diff}\n</edit_success>`,
             },
-          );
-
-          const diff =
-            originalContent.newContent !== null
-              ? generateDiffString(originalContent.raw, originalContent.newContent)
-              : undefined;
-
-          results.push({
-            path: originalPath,
-            ok: originalContent.newContent !== null,
-            diff,
-            count: fileEdits.length,
-            errors: originalContent.editErrors,
-          });
-        } catch (err: any) {
-          results.push({
-            path: originalPath,
-            ok: false,
-            error: err?.message ?? String(err),
-          });
-        }
+          ],
+          details: { path, ok: true, diff },
+        };
+      } catch (err: any) {
+        const errorMsg = err?.message ?? String(err);
+        return {
+          content: [
+            {
+              type: "text",
+              text: `<edit_failure path="${path}">\n${errorMsg}\n</edit_failure>`,
+            },
+          ],
+          details: { path, ok: false, error: errorMsg },
+        };
       }
-
-      // Store in context.state for same-session reuse; also return in details for reload survival
-      if (!ctx.state) ctx.state = {};
-      ctx.state.results = results;
-
-      const success = results.filter((r) => r.ok);
-      const allEditErrors: string[] = [];
-      for (const r of results) {
-        if (r.error) allEditErrors.push(`${r.path}: ${r.error}`);
-        if (r.errors) {
-          for (const e of r.errors) {
-            allEditErrors.push(`${r.path}: ${e}`);
-          }
-        }
-      }
-
-      const lines: string[] = [];
-      lines.push(`${success.length} file(s) edited`);
-
-      if (allEditErrors.length > 0) {
-        lines.push("");
-        lines.push(`${allEditErrors.length} edit(s) failed:`);
-        for (const e of allEditErrors) {
-          lines.push(`- ${e}`);
-        }
-      } else {
-        lines.push(`0 edit(s) failed`);
-      }
-
-      // Append diffs for LLM context
-      if (includeDiffs) {
-        for (const r of results) {
-          if (r.ok && r.diff) {
-            lines.push("");
-            lines.push(`<diff path="${r.path}">`);
-            lines.push(r.diff);
-            lines.push(`</diff>`);
-          }
-        }
-      }
-
-      return {
-        content: [{ type: "text", text: lines.join("\n") }],
-        details: { results, includeDiffs },
-      };
     },
 
     renderCall(args, theme, context) {
@@ -673,42 +567,39 @@ export default function (pi: ExtensionAPI) {
       if (!context.isPartial) {
         return new Container();
       }
-      // Pending: show file paths only
-      const edits = Array.isArray(args?.edits) ? args.edits : [];
-      const groups = groupByPath(edits as EditItem[], context.cwd);
-      const paths = [...groups.values()].map((g) => g.originalPath);
+      // Pending: show file path
+      const path = args?.path ?? "...";
       const headerBox = new Box(1, 1, (text) => text);
       headerBox.setBgFn((text) => theme.bg("toolPendingBg", text));
-      const header = `${theme.fg("toolTitle", theme.bold("edit"))}... ${paths.map((p) => theme.fg("accent", p)).join(", ")}`;
+      const header = `${theme.fg("toolTitle", theme.bold("edit"))}... ${theme.fg("accent", path)}`;
       headerBox.addChild(new Text(header, 0, 0));
       return headerBox;
     },
 
     renderResult(result, _options, theme, context) {
-      // Get results: result.details (execute return, survives reload) > context.state (same-session fallback)
       const details = (result as any).details ?? {};
-      let results: FileResult[] | undefined =
-        details.results ?? (context.state as any)?.results;
+      const path = details.path ?? "...";
+      const ok = details.ok ?? false;
+      const diff = details.diff;
+      const error = details.error;
 
-      if (context.isError || !results || results.length === 0) {
+      // If the tool threw an exception (not caught), show it as failure
+      if (context.isError) {
         const errText = result.content
           .filter((c: any) => c.type === "text")
           .map((c: any) => c.text || "")
           .join("\n");
         const isAborted = errText.toLowerCase().includes("abort") || errText.toLowerCase().includes("cancel");
-        const path = Array.isArray((context?.args as any)?.edits)
-          ? (context.args as any).edits[0]?.path ?? "..."
-          : "...";
-        results = [{ path, ok: false, error: isAborted ? "Cancelled" : (errText || "Unknown error") }];
+        return buildResultBox(
+          path,
+          false,
+          undefined,
+          isAborted ? "Cancelled" : (errText || "Unknown error"),
+          theme,
+        );
       }
 
-      const container = new Container();
-      for (const r of results) {
-        container.addChild(buildFileBox(r, theme));
-        container.addChild(new Spacer(1));
-      }
-
-      return container;
+      return buildResultBox(path, ok, diff, error, theme);
     },
   });
 }

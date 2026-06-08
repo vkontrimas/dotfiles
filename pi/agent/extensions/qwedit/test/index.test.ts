@@ -1,13 +1,17 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import {
   resolvePath,
-  groupByPath,
   findText,
-  applyEdits,
   generateDiffString,
   replaceTabs,
   parseDiffLine,
   mergeAdjacentChanges,
+  normalizeToLF,
+  detectLineEnding,
+  restoreLineEndings,
+  stripBom,
+  countOccurrences,
+  normText,
 } from "../index";
 
 // ── resolvePath ────────────────────────────────────────────────────────────
@@ -29,42 +33,6 @@ describe("resolvePath", () => {
     expect(resolvePath("~/foo/bar.txt", "/cwd")).toBe(
       process.env.HOME + "/foo/bar.txt",
     );
-  });
-});
-
-// ── groupByPath ────────────────────────────────────────────────────────────
-
-describe("groupByPath", () => {
-  it("groups edits by resolved path", () => {
-    const edits = [
-      { path: "/foo/a.txt", oldText: "x", newText: "y" },
-      { path: "/foo/b.txt", oldText: "p", newText: "q" },
-      { path: "/foo/a.txt", oldText: "z", newText: "w" },
-    ];
-    const groups = groupByPath(edits, "/cwd");
-    expect(groups.size).toBe(2);
-    expect(groups.get("/foo/a.txt")!.edits.length).toBe(2);
-    expect(groups.get("/foo/b.txt")!.edits.length).toBe(1);
-  });
-
-  it("preserves original path in group metadata", () => {
-    const edits = [
-      { path: "relative.txt", oldText: "x", newText: "y" },
-    ];
-    const groups = groupByPath(edits, "/cwd");
-    const group = groups.get("/cwd/relative.txt")!;
-    expect(group.originalPath).toBe("relative.txt");
-  });
-
-  it("merges edits for the same file from different path forms", () => {
-    const home = process.env.HOME!;
-    const edits = [
-      { path: "~/file.txt", oldText: "a", newText: "b" },
-      { path: `${home}/file.txt`, oldText: "c", newText: "d" },
-    ];
-    const groups = groupByPath(edits, "/cwd");
-    expect(groups.size).toBe(1);
-    expect(groups.get(`${home}/file.txt`)!.edits.length).toBe(2);
   });
 });
 
@@ -107,7 +75,6 @@ describe("findText", () => {
   });
 
   it("prefers exact match over normalized match", () => {
-    // If exact match exists, use it (indexOf finds it first)
     const result = findText("hello world", "hello");
     expect(result.found).toBe(true);
     expect(result.index).toBe(0);
@@ -123,124 +90,143 @@ describe("findText", () => {
     expect(result.found).toBe(true);
     expect(result.index).toBe(0);
   });
+
+  it("returns occurrences count for exact match", () => {
+    const result = findText("hello world hello", "hello");
+    expect(result.found).toBe(true);
+    expect(result.occurrences).toBe(2);
+  });
+
+  it("returns occurrences of 1 for unique match", () => {
+    const result = findText("hello world", "hello");
+    expect(result.found).toBe(true);
+    expect(result.occurrences).toBe(1);
+  });
+
+  it("returns occurrences count for fuzzy match", () => {
+    const result = findText("hello   \nworld   \nhello   \nworld   ", "hello\nworld");
+    expect(result.found).toBe(true);
+    expect(result.occurrences).toBe(2);
+    expect(result.fuzzy).toBe(true);
+  });
+
+  it("sets fuzzy flag to false for exact match", () => {
+    const result = findText("hello world", "hello");
+    expect(result.fuzzy).toBe(false);
+  });
+
+  it("sets fuzzy flag to true for fuzzy match", () => {
+    const result = findText("hello   \nworld", "hello\nworld");
+    expect(result.fuzzy).toBe(true);
+  });
 });
 
-// ── applyEdits ─────────────────────────────────────────────────────────────
+// ── normalizeToLF ──────────────────────────────────────────────────────────
 
-describe("applyEdits", () => {
-  it("applies a single edit", () => {
-    const result = applyEdits("hello world", [{ oldText: "world", newText: "universe" }], "test.txt");
-    expect(result.content).toBe("hello universe");
-    expect(result.errors).toHaveLength(0);
+describe("normalizeToLF", () => {
+  it("converts CRLF to LF", () => {
+    expect(normalizeToLF("hello\r\nworld\r\n")).toBe("hello\nworld\n");
   });
 
-  it("applies multiple non-overlapping edits", () => {
-    const content = "alpha beta gamma delta";
-    const result = applyEdits(content, [
-      { oldText: "alpha", newText: "ALPHA" },
-      { oldText: "gamma", newText: "GAMMA" },
-      { oldText: "delta", newText: "DELTA" },
-    ], "test.txt");
-    expect(result.content).toBe("ALPHA beta GAMMA DELTA");
-    expect(result.errors).toHaveLength(0);
+  it("converts lone CR to LF", () => {
+    expect(normalizeToLF("hello\rworld")).toBe("hello\nworld");
   });
 
-  it("rejects empty oldText", () => {
-    const result = applyEdits("hello", [{ oldText: "", newText: "world" }], "test.txt");
-    expect(result.content).toBeNull();
-    expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]).toContain("[edit 1]");
-    expect(result.errors[0]).toContain("oldText must not be empty");
+  it("leaves LF-only content unchanged", () => {
+    expect(normalizeToLF("hello\nworld")).toBe("hello\nworld");
   });
 
-  it("reports not-found with snippet", () => {
-    const result = applyEdits("hello world", [{ oldText: "goodbye", newText: "replaced" }], "test.txt");
-    expect(result.content).toBeNull();
-    expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]).toContain("[edit 1]");
-    expect(result.errors[0]).toContain("goodbye");
+  it("handles mixed line endings", () => {
+    expect(normalizeToLF("a\r\nb\rc\nd")).toBe("a\nb\nc\nd");
+  });
+});
+
+// ── detectLineEnding ───────────────────────────────────────────────────────
+
+describe("detectLineEnding", () => {
+  it("detects CRLF when it appears first", () => {
+    expect(detectLineEnding("hello\r\nworld\n")).toBe("\r\n");
   });
 
-  it("truncates long oldText in error snippet", () => {
-    const longText = "a".repeat(100);
-    const result = applyEdits("hello", [{ oldText: longText, newText: "replaced" }], "test.txt");
-    expect(result.errors[0]).toContain("…");
-    // Snippet should be first line trimmed, max 80 chars + …
-    const snippetMatch = result.errors[0].match(/"([^"]+)"/);
-    expect(snippetMatch![1].length).toBe(81); // 80 chars + …
+  it("detects LF when only LF present", () => {
+    expect(detectLineEnding("hello\nworld")).toBe("\n");
   });
 
-  it("reports multi-line oldText with first line only", () => {
-    const result = applyEdits("hello", [{ oldText: "very long first line that exceeds eighty characters so it should be truncated\nsecond line\nthird line", newText: "replaced" }], "test.txt");
-    expect(result.errors[0]).toContain("very long first line that exceeds eighty characters so it should be tr");
-    expect(result.errors[0]).toContain("…");
-    expect(result.errors[0]).not.toContain("second line");
+  it("returns LF when no line endings", () => {
+    expect(detectLineEnding("hello")).toBe("\n");
   });
 
-  it("detects overlapping edits", () => {
-    const content = "lineA\nlineB\nlineC\nlineD";
-    const result = applyEdits(content, [
-      { oldText: "lineA\nlineB\nlineC", newText: "X\nlineB\nY" },
-      { oldText: "lineB\nlineC\nlineD", newText: "M\nlineC\nN" },
-    ], "test.txt");
-    expect(result.content).not.toBeNull(); // first edit applied
-    expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]).toContain("[edit 1, 2]");
-    expect(result.errors[0]).toContain("overlap");
+  it("returns LF when LF appears before CRLF", () => {
+    expect(detectLineEnding("hello\nworld\r\n")).toBe("\n");
+  });
+});
+
+// ── restoreLineEndings ─────────────────────────────────────────────────────
+
+describe("restoreLineEndings", () => {
+  it("converts LF to CRLF", () => {
+    expect(restoreLineEndings("hello\nworld\n", "\r\n")).toBe("hello\r\nworld\r\n");
   });
 
-  it("applies non-overlapping edits when some overlap", () => {
-    const content = "lineA\nlineB\nlineC\nlineD\nlineE";
-    const result = applyEdits(content, [
-      { oldText: "lineA", newText: "REPLACED_A" },
-      { oldText: "lineB\nlineC\nlineD", newText: "X\nlineB\nY" },
-      { oldText: "lineC\nlineD\nlineE", newText: "M\nlineC\nN" },
-    ], "test.txt");
-    expect(result.content).toBe("REPLACED_A\nX\nlineB\nY\nlineE");
-    expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]).toContain("[edit 2, 3]");
+  it("leaves content unchanged for LF ending", () => {
+    expect(restoreLineEndings("hello\nworld\n", "\n")).toBe("hello\nworld\n");
+  });
+});
+
+// ── stripBom ───────────────────────────────────────────────────────────────
+
+describe("stripBom", () => {
+  it("strips UTF-8 BOM", () => {
+    const result = stripBom("\uFEFFhello");
+    expect(result.bom).toBe("\uFEFF");
+    expect(result.text).toBe("hello");
   });
 
-  it("handles partial failure (not-found + success)", () => {
-    const content = "alpha beta gamma";
-    const result = applyEdits(content, [
-      { oldText: "alpha", newText: "ALPHA" },
-      { oldText: "does not exist", newText: "replaced" },
-      { oldText: "gamma", newText: "GAMMA" },
-    ], "test.txt");
-    expect(result.content).toBe("ALPHA beta GAMMA");
-    expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]).toContain("[edit 2]");
+  it("leaves content without BOM unchanged", () => {
+    const result = stripBom("hello");
+    expect(result.bom).toBe("");
+    expect(result.text).toBe("hello");
+  });
+});
+
+// ── countOccurrences ───────────────────────────────────────────────────────
+
+describe("countOccurrences", () => {
+  it("counts non-overlapping occurrences", () => {
+    expect(countOccurrences("aaa", "aa")).toBe(1);
   });
 
-  it("rejects no-op edits", () => {
-    const content = "hello world";
-    const result = applyEdits(content, [{ oldText: "hello", newText: "hello" }], "test.txt");
-    expect(result.content).toBeNull();
-    expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]).toContain("identical content");
+  it("counts multiple occurrences", () => {
+    expect(countOccurrences("hello world hello", "hello")).toBe(2);
   });
 
-  it("applies edits from back to front (preserves positions)", () => {
-    const content = "a b c d e";
-    const result = applyEdits(content, [
-      { oldText: "e", newText: "E" },
-      { oldText: "a", newText: "A" },
-      { oldText: "c", newText: "C" },
-    ], "test.txt");
-    expect(result.content).toBe("A b C d E");
+  it("returns 0 for no matches", () => {
+    expect(countOccurrences("hello", "goodbye")).toBe(0);
   });
 
-  it("reports all errors when all edits fail", () => {
-    const content = "hello";
-    const result = applyEdits(content, [
-      { oldText: "not here", newText: "replaced" },
-      { oldText: "also not here", newText: "replaced" },
-    ], "test.txt");
-    expect(result.content).toBeNull();
-    expect(result.errors).toHaveLength(2);
-    expect(result.errors[0]).toContain("[edit 1]");
-    expect(result.errors[1]).toContain("[edit 2]");
+  it("returns Infinity for empty needle", () => {
+    expect(countOccurrences("hello", "")).toBe(Infinity);
+  });
+});
+
+// ── normText ───────────────────────────────────────────────────────────────
+
+describe("normText", () => {
+  it("strips trailing whitespace per line", () => {
+    expect(normText("hello   \nworld  ")).toBe("hello\nworld");
+  });
+
+  it("normalizes smart quotes", () => {
+    expect(normText("\u201chello\u201d")).toBe('"hello"');
+    expect(normText("\u2018world\u2019")).toBe("'world'");
+  });
+
+  it("normalizes unicode dashes to hyphen", () => {
+    expect(normText("a\u2013b\u2014c")).toBe("a-b-c");
+  });
+
+  it("normalizes special spaces", () => {
+    expect(normText("a\u00A0b\u3000c")).toBe("a b c");
   });
 });
 
@@ -293,9 +279,8 @@ describe("generateDiffString", () => {
     const old = lines.join("\n") + "\n";
     const nw = lines.map((l, i) => i === 50 ? "MODIFIED" : l).join("\n") + "\n";
     const diff = generateDiffString(old, nw);
-    // Line numbers should be padded to 3 chars for 100 lines
-    expect(diff).toMatch(/ {2}\d{2}/);  // space-padded to 3 chars
-    expect(diff).toContain("...\n");  // context truncation
+    expect(diff).toMatch(/ {2}\d{2}/);
+    expect(diff).toContain("...\n");
   });
 });
 
