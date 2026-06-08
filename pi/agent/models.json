@@ -41,6 +41,27 @@
           "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
         }
       ]
+    },
+    "bifrost": {
+      "baseUrl": "http://localhost:11435/v1",
+      "api": "openai-completions",
+      "apiKey": "bifrost",
+      "compat": {
+        "supportsDeveloperRole": false,
+        "supportsReasoningEffort": false,
+        "thinkingFormat": "qwen-chat-template"
+      },
+      "models": [
+        {
+          "id": "vllm/qwen3.6-27b-autoround",
+          "name": "Qwen3.6 27B AutoRound — via Bifrost gateway (:11435 → vLLM)",
+          "reasoning": true,
+          "input": ["text", "image"],
+          "contextWindow": 200000,
+          "maxTokens": 32768,
+          "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+        }
+      ]
     }
   }
 }

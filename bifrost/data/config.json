@@ -1,0 +1,29 @@
+{
+  "$schema": "https://www.getbifrost.ai/schema",
+  "providers": {
+    "vllm": {
+      "keys": [
+        {
+          "name": "vllm-local",
+          "value": "",
+          "models": ["qwen3.6-27b-autoround"],
+          "weight": 1.0,
+          "vllm_key_config": {
+            "url": "http://host.docker.internal:11434",
+            "model_name": "qwen3.6-27b-autoround"
+          }
+        }
+      ],
+      "network_config": {
+        "allow_private_network": true
+      }
+    }
+  },
+  "config_store": {
+    "enabled": true,
+    "type": "sqlite",
+    "config": {
+      "path": "./config.db"
+    }
+  }
+}
