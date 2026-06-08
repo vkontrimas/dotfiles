@@ -514,6 +514,31 @@ export {
 
 
 export default function (pi: ExtensionAPI) {
+  // Module-level state for diff inclusion toggle
+  let includeDiffs = true;
+
+  // Reconstruct state from session on startup
+  pi.on("session_start", async (_event, ctx) => {
+    for (const entry of ctx.sessionManager.getBranch()) {
+      if (entry.type === "message" && entry.message.role === "toolResult") {
+        if (entry.message.toolName === "edit") {
+          const details = entry.message.details as any;
+          if (details !== undefined && "includeDiffs" in details) {
+            includeDiffs = details.includeDiffs;
+          }
+        }
+      }
+    }
+  });
+
+  pi.registerCommand("edit-diffs", {
+    description: "Toggle whether edit tool includes diffs in LLM context",
+    handler: async (_args, ctx) => {
+      includeDiffs = !includeDiffs;
+      return ctx.ui.notify(`Edit diffs in context: ${includeDiffs ? "on" : "off"}`, "info");
+    },
+  });
+
   pi.registerTool({
     name: "edit",
     label: "edit",
@@ -625,9 +650,21 @@ export default function (pi: ExtensionAPI) {
         lines.push(`0 edit(s) failed`);
       }
 
+      // Append diffs for LLM context
+      if (includeDiffs) {
+        for (const r of results) {
+          if (r.ok && r.diff) {
+            lines.push("");
+            lines.push(`<diff path="${r.path}">`);
+            lines.push(r.diff);
+            lines.push(`</diff>`);
+          }
+        }
+      }
+
       return {
         content: [{ type: "text", text: lines.join("\n") }],
-        details: { results },
+        details: { results, includeDiffs },
       };
     },
 
