@@ -5,19 +5,22 @@
   "modules-right": [
     "custom/ram-label",
     "custom/ram-memory",
-    "custom/gpu-sep",
+    "custom/sep",
     "custom/gpu-label",
     "custom/gpu-memory",
-    "custom/llm-sep",
+    "custom/sep",
     "custom/llm-label",
     "custom/llm-status",
     "custom/llm-status-err",
     "custom/llm-dual",
     "custom/llm-solo",
-    "custom/llm-sep2",
+    "custom/sep",
     "custom/pwr-label",
     "custom/pwr-toggle",
-    "custom/pwr-sep",
+    "custom/sep",
+    "custom/sus-label",
+    "custom/sus-inhibit",
+    "custom/sep",
     "clock",
     "tray"
   ],
@@ -28,7 +31,7 @@
     "exec": "$HOME/.config/waybar/scripts/gpu-memory.sh",
     "interval": 5
   },
-  "custom/gpu-sep": {
+  "custom/sep": {
     "format": "|"
   },
   "custom/ram-label": {
@@ -38,9 +41,7 @@
     "exec": "$HOME/.config/waybar/scripts/ram-memory.sh",
     "interval": 5
   },
-  "custom/llm-sep": {
-    "format": "|"
-  },
+
   "custom/llm-label": {
     "format": "LLM"
   },
@@ -68,9 +69,7 @@
     "format": "{}",
     "on-click": "$HOME/.config/waybar/llm/.venv/bin/python $HOME/.config/waybar/llm/client.py toggle llamacpp/mtp"
   },
-  "custom/llm-sep2": {
-    "format": "|"
-  },
+
   "custom/pwr-label": {
     "format": "PWR"
   },
@@ -81,9 +80,18 @@
     "format": "{}",
     "on-click": "$HOME/.config/waybar/scripts/power-profile.sh toggle"
   },
-  "custom/pwr-sep": {
-    "format": "|"
+
+  "custom/sus-label": {
+    "format": "SUS"
   },
+  "custom/sus-inhibit": {
+    "exec": "$HOME/.config/waybar/scripts/suspend-inhibit.sh button",
+    "interval": 2,
+    "return-type": "json",
+    "format": "{}",
+    "on-click": "$HOME/.config/waybar/scripts/suspend-inhibit.sh toggle"
+  },
+
   "clock": {
     "format": "{:%Y-%m-%d %H:%M:%S}",
     "interval": 1
