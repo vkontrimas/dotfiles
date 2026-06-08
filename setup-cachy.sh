@@ -90,6 +90,8 @@ install_deps() {
         nushell \
         tree-sitter-cli \
         sway \
+        swaylock \
+        swayidle \
         alacritty || true
 
     # Nerd Font (Hurmit)
@@ -204,6 +206,8 @@ setup_links() {
     link_dir "nvim" "$HOME/.config/nvim"
     link_dir "nu" "$HOME/.config/nushell"
     link_dir "sway" "$HOME/.config/sway"
+    link_dir "swaylock" "$HOME/.config/swaylock"
+    link_dir "swayidle" "$HOME/.config/swayidle"
     link_dir "waybar" "$HOME/.config/waybar"
     link_dir "alacritty" "$HOME/.config/alacritty"
     link_dir "satty" "$HOME/.config/satty"

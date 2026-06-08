@@ -43,14 +43,9 @@ output DP-2 {
 }
 
 ### Idle / lock configuration
-#
-# swayidle + swaylock example:
-#
-#   exec swayidle -w \
-#        timeout 300 'swaylock -f -c 000000' \
-#        timeout 600 'swaymsg "output * power off"' \
-#        resume 'swaymsg "output * power on"' \
-#        before-sleep 'swaylock -f -c 000000'
+exec swayidle -w
+
+bindsym $mod+Shift+q exec swaylock -f
 
 ### Input configuration
 #
@@ -73,7 +68,6 @@ output DP-2 {
 # Basics
 bindsym $mod+Return exec $term
 bindsym $mod+t exec $term
-bindsym $mod+Shift+q kill
 bindsym $mod+d exec $menu
 floating_modifier $mod normal
 bindsym $mod+Shift+c reload
@@ -181,10 +175,10 @@ bindsym Print exec grim
 
 font pango:Hurmit Nerd Font Mono 10
 
-client.unfocused #10141C #141821 #5A6378 #141821 #5A6378
+client.unfocused #141821 #141821 #5A6378 #141821 #141821
 client.focused #10141C #39BAE6 #0D1017 #39BAE6 #39BAE6
-client.focused_inactive #10141C #141821 #5A6378 #141821 #5A6378
-client.urgent #10141C #D95757 #D95757 #D95757 #D95757
+client.focused_inactive #141821 #141821 #5A6378 #141821 #141821
+client.urgent #10141C #D95757 #D95757 #39BAE6 #D95757
 
 ### Status bar
 
