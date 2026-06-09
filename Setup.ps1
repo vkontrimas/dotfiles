@@ -258,6 +258,7 @@ function setup-links-elevated {
     link-dir "alacritty" "$env:APPDATA\alacritty"
     link-dir "nvim" "$env:LOCALAPPDATA\nvim"
     link-dir "nu" "$env:APPDATA\nushell"
+    link-dir "pi" "$env:USERPROFILE\.pi"
     link-file "wezterm\wezterm.lua" "$env:USERPROFILE\.wezterm.lua"
 }
 

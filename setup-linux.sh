@@ -260,6 +260,7 @@ setup_links() {
     # Standard XDG config directories (Linux)
     link_dir "nvim" "$HOME/.config/nvim"
     link_dir "nu" "$HOME/.config/nushell"
+    link_dir "pi" "$HOME/.pi"
 
     # WezTerm configuration
     link_file "wezterm/wezterm.lua" "$HOME/.wezterm.lua"

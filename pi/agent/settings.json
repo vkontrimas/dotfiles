@@ -1,7 +1,7 @@
 {
-  "lastChangelogVersion": "0.75.3",
-  "defaultProvider": "vllm-dual",
-  "defaultModel": "qwen3.6-27b-autoround",
+  "lastChangelogVersion": "0.78.1",
+  "defaultProvider": "opencode",
+  "defaultModel": "qwen3.6-plus",
   "packages": [
     "npm:@juicesharp/rpiv-web-tools",
     "npm:@marcfargas/pi-heartbeat"

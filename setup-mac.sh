@@ -183,6 +183,7 @@ setup_links() {
     link_dir "alacritty" "$HOME/.config/alacritty"
     link_dir "nvim" "$HOME/.config/nvim"
     link_dir "nu" "$HOME/Library/Application Support/nushell"
+    link_dir "pi" "$HOME/.pi"
 
     # iTerm2 profile configuration
     link_dir "iterm2/nushell-dark.json" "$HOME/Library/Application Support/iTerm2/DynamicProfiles/nushell-dark.json"
