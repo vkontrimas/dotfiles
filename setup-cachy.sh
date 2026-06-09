@@ -212,6 +212,10 @@ setup_links() {
     link_dir "alacritty" "$HOME/.config/alacritty"
     link_dir "satty" "$HOME/.config/satty"
 
+    # SSH config (agent.conf and config only — private keys stay in ~/.ssh/)
+    link_file "ssh/agent.conf" "$HOME/.ssh/agent.conf"
+    link_file "ssh/config" "$HOME/.ssh/config"
+
     # Sway NVIDIA wrapper — must be executable
     local sway_wrapper="$HOME/.config/sway/sway-launch.sh"
     if [[ -f "$sway_wrapper" ]]; then
