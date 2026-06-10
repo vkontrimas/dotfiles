@@ -183,14 +183,16 @@ client.urgent #10141C #D95757 #D95757 #39BAE6 #D95757
 
 ### Status bar
 
-
-### Window Config
+### Floating Windows
 
 # Fix flameshot
 for_window [app_id="flameshot"] border pixel 0, floating enable, fullscreen disable, move absolute position 0 0
 
 # Steam friends list
 for_window [class="steam" title="^Friends List$"] floating enable, border normal, resize set 340px 550px
+
+# File picker (e.g. "Open folder as vault")
+for_window [app_id="xdg-desktop-portal-gtk"] floating enable, resize set 1100px 980px
 
 include /etc/sway/config.d/*
 exec ~/.config/waybar/llm/.venv/bin/python ~/.config/waybar/llm/daemon.py

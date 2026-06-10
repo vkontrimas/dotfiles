@@ -211,8 +211,19 @@ setup_links() {
     link_dir "waybar" "$HOME/.config/waybar"
     link_dir "alacritty" "$HOME/.config/alacritty"
     link_dir "satty" "$HOME/.config/satty"
+    link_dir "gtk-3.0" "$HOME/.config/gtk-3.0"
+    link_dir "gtk-4.0" "$HOME/.config/gtk-4.0"
+
+    # Set portal color-scheme so Firefox/Electron/libadwaita apps detect dark mode
+    if [[ "$(gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null)" != "'prefer-dark'" ]]; then
+        gsettings set org.gnome.desktop.interface color-scheme 'prefer-dark'
+        echo -e "${GREEN}- Set color-scheme to prefer-dark${NC}"
+    else
+        echo -e "${GREEN}- color-scheme already prefer-dark, skipping${NC}"
+    fi
 
     # SSH config (agent.conf and config only — private keys stay in ~/.ssh/)
+    link_file "profile/profile" "$HOME/.profile"
     link_file "ssh/agent.conf" "$HOME/.ssh/agent.conf"
     link_file "ssh/config" "$HOME/.ssh/config"
 
