@@ -191,6 +191,9 @@ for_window [app_id="flameshot"] border pixel 0, floating enable, fullscreen disa
 # Steam friends list
 for_window [class="steam" title="^Friends List$"] floating enable, border normal, resize set 340px 550px
 
+# Firefox Library
+for_window [app_id="firefox" title="^Library$"] floating enable
+
 # File picker (e.g. "Open folder as vault")
 for_window [app_id="xdg-desktop-portal-gtk"] floating enable, resize set 1100px 980px
 
