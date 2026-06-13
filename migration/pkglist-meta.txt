@@ -1,0 +1,8 @@
+# Meta-packages explicitly installed (each pulls in its dependencies).
+# Already included in pkglist-explicit.txt; listed here for reference.
+
+base
+base-devel
+cachyos-gaming-applications
+linux-firmware
+vlc-plugins-all
