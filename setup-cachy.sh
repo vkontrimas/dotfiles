@@ -312,13 +312,16 @@ setup_neovim_tooling() {
 show_post_install_notes() {
     echo -e "\n${GREEN}=== Setup Complete! ===${NC}"
     echo -e "\n${YELLOW}Post-installation notes:${NC}"
-    echo -e "1. To set Nushell as your default shell, first register it, then chsh:"
-    echo -e "     sudo sh -c 'command -v nu >> /etc/shells'"
-    echo -e "     chsh -s \"\$(command -v nu)\""
-    echo -e "   (chsh rejects shells not listed in /etc/shells)"
+    echo -e "1. Keep fish as your LOGIN shell (CachyOS default) for compatibility."
+    echo -e "   Do NOT chsh to nushell. Nushell is the interactive shell and is launched"
+    echo -e "   inside the terminal via alacritty's [terminal.shell] program = \"nu\"."
     echo -e "2. Neovim and Nushell configs are linked and ready to use"
     echo -e "3. If WezTerm wasn't available via pacman, install it via an AUR helper:"
     echo -e "     paru -S wezterm  (or your preferred AUR helper)"
+    echo -e "4. Run the hardware/disk-specific setup scripts manually (NOT run by this"
+    echo -e "   script; both need sudo):"
+    echo -e "     ./scripts/setup-data-mount.sh        # mounts the data-ssd (LUKS ext4)"
+    echo -e "     ./scripts/setup-nvidia-powerlimit.sh # installs nvidia-powerlimit.service (280W)"
 }
 
 # Main execution
