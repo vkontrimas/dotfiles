@@ -92,6 +92,10 @@ install_deps() {
         sway \
         swaylock \
         swayidle \
+        uv \
+        docker \
+        docker-compose \
+        lf \
         alacritty || true
 
     # Nerd Font (Hurmit)
