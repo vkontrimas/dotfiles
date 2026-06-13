@@ -1,0 +1,5 @@
+# lf configuration
+# See docs/lf.md for the default keybindings.
+
+# Bind x to delete (lf leaves delete unbound by default since it's destructive).
+map x delete

@@ -210,6 +210,7 @@ setup_links() {
     link_dir "swayidle" "$HOME/.config/swayidle"
     link_dir "waybar" "$HOME/.config/waybar"
     link_dir "alacritty" "$HOME/.config/alacritty"
+    link_dir "lf" "$HOME/.config/lf"
     link_dir "satty" "$HOME/.config/satty"
     link_dir "gtk-3.0" "$HOME/.config/gtk-3.0"
     link_dir "gtk-4.0" "$HOME/.config/gtk-4.0"

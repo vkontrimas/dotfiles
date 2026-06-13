@@ -19,6 +19,20 @@
       }
     }
   },
+  "governance": {
+    "pricing_overrides": [
+      {
+        "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        "name": "Local vLLM electricity cost",
+        "scope_kind": "provider",
+        "provider_id": "vllm",
+        "match_type": "exact",
+        "pattern": "qwen3.6-27b-autoround",
+        "request_types": ["chat_completion"],
+        "pricing_patch": "{\"input_cost_per_token\":0.0000007,\"output_cost_per_token\":0.0000007}"
+      }
+    ]
+  },
   "config_store": {
     "enabled": true,
     "type": "sqlite",
