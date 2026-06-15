@@ -92,6 +92,14 @@ install_deps() {
         sway \
         swaylock \
         swayidle \
+        grim \
+        satty \
+        wmenu \
+        jq \
+        wireplumber \
+        playerctl \
+        brightnessctl \
+        waybar \
         uv \
         docker \
         docker-compose \
