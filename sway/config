@@ -194,6 +194,9 @@ for_window [class="steam" title="^Friends List$"] floating enable, border normal
 # Firefox Library
 for_window [app_id="firefox" title="^Library$"] floating enable
 
+# Bitwarden popup
+for_window [app_id="firefox" title="^Extension: \\(Bitwarden"] floating enable
+
 # File picker (e.g. "Open folder as vault")
 for_window [app_id="xdg-desktop-portal-gtk"] floating enable, resize set 1100px 980px
 
