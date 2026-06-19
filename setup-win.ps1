@@ -50,9 +50,11 @@ function install-deps {
         "ripgrep"
         "tre-command"
         "delta"
+        "jq"
 
         "graphviz"
         "just"
+        "uv"
 
         "alacritty"
         "wezterm-nightly"
@@ -137,8 +139,9 @@ function run-elevated-tasks {
     
     # Launch elevated PowerShell
     $dotfilesDir = $PSScriptRoot
-    $scriptPath = Join-Path $dotfilesDir "Setup.ps1"
-    Start-Process powershell -ArgumentList "-Command", "& '$scriptPath' --elevated-tasks" -Verb RunAs -Wait
+    $scriptPath = Join-Path $dotfilesDir "setup-win.ps1"
+    $forceArg = if ($Force) { " -Force" } else { "" }
+    Start-Process powershell -ArgumentList "-Command", "& '$scriptPath' --elevated-tasks$forceArg" -Verb RunAs -Wait
 }
 
 function upgrade-scoop {
@@ -258,6 +261,7 @@ function setup-links-elevated {
     link-dir "alacritty" "$env:APPDATA\alacritty"
     link-dir "nvim" "$env:LOCALAPPDATA\nvim"
     link-dir "nu" "$env:APPDATA\nushell"
+    link-dir "lf" "$env:LOCALAPPDATA\lf"
     link-dir "pi" "$env:USERPROFILE\.pi"
     link-file "wezterm\wezterm.lua" "$env:USERPROFILE\.wezterm.lua"
 }
