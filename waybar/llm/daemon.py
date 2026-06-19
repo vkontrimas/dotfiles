@@ -7,21 +7,36 @@ import subprocess
 import socket
 import os
 import sys
+import fcntl
 import threading
 import time
-from pathlib import Path
 
 SOCK_PATH = os.path.expanduser("~/.cache/waybar-llm.sock")
-SAVED_PATH = os.path.expanduser("~/.cache/llm-saved-variant")
+LOCK_PATH = os.path.expanduser("~/.cache/waybar-llm.lock")
 ROOT_DIR = os.path.expanduser("~/local-llm/club-3090")
 CONTAINER_PREFIXES = ("vllm-", "llama-cpp-", "beellama-", "ik-llama-", "sglang-")
 
 _state = {"variant": "", "status": "unloaded"}
 _switching = False  # True while switch.sh is running
+_saved_variant = ""  # variant to restore on wake; kept in memory across suspend
 _lock = threading.Lock()
+_singleton_fp = None  # held open for the process lifetime to keep the flock
+
+
+def acquire_singleton():
+    # Refuse to start a second daemon — otherwise each sway start leaks another
+    # poll loop and the socket path gets reclaimed by whichever bound last.
+    global _singleton_fp
+    _singleton_fp = open(LOCK_PATH, "w")
+    try:
+        fcntl.flock(_singleton_fp.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        sys.exit(0)
 
 
 def main():
+    acquire_singleton()
+
     if os.path.exists(SOCK_PATH):
         os.unlink(SOCK_PATH)
 
@@ -55,17 +70,24 @@ def handle(cmd):
             v, s = _state["variant"], _state["status"]
         return f"{v}/{s}"
     elif cmd == "suspend":
+        global _saved_variant
         with _lock:
-            v, s = _state["variant"], _state["status"]
-        if not v or s != "loaded":
+            v = _state["variant"]
+            # Record exactly what was running at this suspend (empty when nothing
+            # is loaded). The daemon survives suspend/resume, so an in-memory note
+            # is enough — and it can't go stale the way an on-disk file would.
+            _saved_variant = v
+        # A container in any state (loaded *or* still loading) pins the GPU, so
+        # tear down whenever a variant is present.
+        if not v:
             return "nothing to suspend"
-        Path(SAVED_PATH).write_text(v)
-        threading.Thread(target=do_suspend, daemon=True).start()
+        # Run synchronously: the caller is the sleep hook, which must block until
+        # the GPU is actually released before the machine goes to sleep.
+        do_suspend()
         return "ok"
     elif cmd == "wake":
-        if not os.path.exists(SAVED_PATH):
-            return "nothing to restore"
-        variant = Path(SAVED_PATH).read_text().strip()
+        with _lock:
+            variant = _saved_variant
         if not variant:
             return "nothing to restore"
         threading.Thread(target=do_wake, args=(variant,), daemon=True).start()
@@ -120,7 +142,6 @@ def do_suspend():
     global _switching
 
     with _lock:
-        variant = _state["variant"]
         _switching = True
 
     env = os.environ.copy()

@@ -246,6 +246,17 @@ setup_links() {
         chmod +x "$sway_wrapper"
     fi
 
+    # logind inhibitor window — give the before-sleep LLM teardown time to finish
+    # before the machine suspends (default is 5s; compose down can exceed it).
+    local logind_dropin="/etc/systemd/logind.conf.d/10-inhibit-delay.conf"
+    local full_logind="$DOTFILES_DIR/swayidle/logind-inhibit-delay.conf"
+    if [[ -f "$logind_dropin" ]] && diff -q "$full_logind" "$logind_dropin" &>/dev/null; then
+        echo -e "${GREEN}- logind inhibit-delay drop-in already in place, skipping${NC}"
+    else
+        echo -e "${BLUE}--- Installing logind inhibit-delay drop-in (takes effect on reboot) ---${NC}"
+        sudo install -Dm644 "$full_logind" "$logind_dropin"
+    fi
+
     # Ly custom session (overrides /usr/share/wayland-sessions/sway.desktop)
     local ly_custom="/etc/ly/custom-sessions"
     if [[ -d "$ly_custom" ]]; then

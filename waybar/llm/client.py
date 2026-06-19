@@ -3,6 +3,8 @@
 Usage:
     python client.py button <variant> <label>   → JSON with text + class
     python client.py toggle <variant>           → toggles variant
+    python client.py suspend                    → tear down running model (blocks until down)
+    python client.py wake                        → restore the model saved at suspend
     python client.py health                     → outputs nothing if daemon alive
     python client.py health-err                 → JSON error if daemon dead
 """
@@ -13,6 +15,7 @@ import os
 
 SOCK_PATH = os.path.expanduser("~/.cache/waybar-llm.sock")
 TIMEOUT = 2  # seconds
+SUSPEND_TIMEOUT = 300  # suspend runs `compose down` synchronously — give it room
 
 
 def main():
@@ -40,12 +43,17 @@ def main():
     elif cmd == "toggle":
         variant = sys.argv[2]
         query(f"toggle {variant}")
+    elif cmd == "suspend":
+        # Blocks until the daemon has finished tearing the model down.
+        query("suspend", timeout=SUSPEND_TIMEOUT)
+    elif cmd == "wake":
+        query("wake")
 
 
-def query(msg):
+def query(msg, timeout=TIMEOUT):
     try:
         s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        s.settimeout(TIMEOUT)
+        s.settimeout(timeout)
         s.connect(SOCK_PATH)
         s.sendall(msg.encode() + b"\n")
         resp = s.recv(4096).decode().strip()

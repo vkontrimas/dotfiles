@@ -42,6 +42,12 @@ output DP-2 {
     scale 1.25
 }
 
+# Pin workspaces to outputs so the startup layout lands on the right monitors
+# regardless of which output is focused while it is being built.
+workspace 1 output DP-2
+workspace 2 output DP-1
+workspace 3 output DP-2
+
 ### Idle / lock configuration
 exec swayidle -w
 
@@ -200,6 +206,12 @@ for_window [app_id="firefox" title="^Extension: \\(Bitwarden"] floating enable
 # File picker (e.g. "Open folder as vault")
 for_window [app_id="xdg-desktop-portal-gtk"] floating enable, resize set 1100px 980px
 
+# Scratchpad terminal — always floating, sized to span both monitors.
+for_window [app_id="scratch_term"] floating enable, resize set width 1300 height 1302
+
 include /etc/sway/config.d/*
 exec ~/.config/waybar/llm/.venv/bin/python ~/.config/waybar/llm/daemon.py
 exec waybar
+
+# Build the standard desktop layout once at login (off-screen, then revealed).
+exec ~/.config/sway/startup-layout.sh
