@@ -206,6 +206,9 @@ for_window [app_id="firefox" title="^Extension: \\(Bitwarden"] floating enable
 # File picker (e.g. "Open folder as vault")
 for_window [app_id="xdg-desktop-portal-gtk"] floating enable, resize set 1100px 980px
 
+# Transmission Torrent Options — always floating
+for_window [app_id="transmission-gtk" title="^Torrent Options$"] floating enable
+
 # Scratchpad terminal — always floating, sized to span both monitors.
 for_window [app_id="scratch_term"] floating enable, resize set width 1300 height 1302
 
