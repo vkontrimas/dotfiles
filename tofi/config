@@ -1,0 +1,39 @@
+# Tofi config — centred dmenu-style ribbon
+# Matches sway theme: Hurmit Nerd Font Mono, #10141C bg, #39BAE6 accent
+
+# Placement
+anchor = center
+width = 500
+height = 550
+horizontal = false
+num-results = 30
+
+# Font — direct path for instant startup (skips fontconfig lookup)
+font = /usr/share/fonts/OTF/HurmitNerdFontMono-Regular.otf
+font-size = 14
+
+# Colours (from sway config)
+background-color = #10141C
+text-color = #5A6378
+prompt-text-color = #39BAE6
+input-text-color = #5A6378
+result-text-color = #5A6378
+selected-result-text-color = #39BAE6
+selected-result-background-color = #1a2a3a
+
+# Layout
+outline-width = 0
+border-width = 2
+border-color = #39BAE6
+prompt-text = " run: "
+min-input-width = 120
+result-spacing = 0
+padding-top = 0
+padding-bottom = 0
+padding-left = 0
+padding-right = 0
+
+# Performance
+hint-font = false
+ascii-input = true
+late-keyboard-init = true

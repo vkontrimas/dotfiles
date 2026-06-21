@@ -94,7 +94,6 @@ install_deps() {
         swayidle \
         grim \
         satty \
-        wmenu \
         jq \
         wireplumber \
         playerctl \
@@ -123,6 +122,14 @@ install_deps() {
         echo -e "${GREEN}--- WezTerm already installed (pacman), skipping ---${NC}"
     else
         echo -e "${YELLOW}--- WezTerm not available via pacman, skipping (install via AUR if needed) ---${NC}"
+    fi
+
+    # Tofi (AUR)
+    if command -v tofi &> /dev/null; then
+        echo -e "${GREEN}--- Tofi already installed, skipping ---${NC}"
+    else
+        echo -e "${BLUE}--- Installing Tofi via paru (AUR) ---${NC}"
+        paru -S tofi || echo -e "${YELLOW}- Tofi install failed, install manually: paru -S tofi${NC}"
     fi
 }
 
@@ -224,6 +231,7 @@ setup_links() {
     link_dir "alacritty" "$HOME/.config/alacritty"
     link_dir "lf" "$HOME/.config/lf"
     link_dir "satty" "$HOME/.config/satty"
+    link_dir "tofi" "$HOME/.config/tofi"
     link_dir "gtk-3.0" "$HOME/.config/gtk-3.0"
     link_dir "gtk-4.0" "$HOME/.config/gtk-4.0"
 

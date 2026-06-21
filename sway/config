@@ -17,7 +17,8 @@ set $right l
 set $term alacritty
 
 # Application launcher
-set $menu wmenu-run
+set $menu tofi-run --output "$(swaymsg -t get_outputs | jq -r '.[] | select(.focused).name')" | xargs swaymsg exec --
+set $drun tofi-drun --drun-launch=true --output "$(swaymsg -t get_outputs | jq -r '.[] | select(.focused).name')"
 
 ### Output configuration
 
@@ -74,7 +75,8 @@ bindsym $mod+Shift+w exec swaylock -f
 # Basics
 bindsym $mod+Return exec $term
 bindsym $mod+t exec $term
-bindsym $mod+d exec $menu
+bindsym $mod+d exec $drun
+bindsym $mod+Shift+d exec $menu
 floating_modifier $mod normal
 bindsym $mod+Shift+c reload
 bindsym $mod+Shift+e exec swaynag -t warning -m 'Exit sway?' -B 'Yes' 'swaymsg exit'
