@@ -235,6 +235,7 @@ require("lazy").setup({
           clients = {
             tree_sitter = { enabled = false },
             buffers = { enabled = false },
+            snippets = { enabled = false },
           },
         }
         -- vim.lsp.set_log_level("off")
