@@ -1,0 +1,20 @@
+# Logs
+config/logs/
+
+# Cache (regenerated from metadata providers)
+config/cache/
+
+# Plugin DLLs (shipped with image, regenerated on container start)
+config/plugins/
+
+# Cached metadata (regenerated from library scan)
+config/metadata/
+
+# Transcoding temp files
+config/transcoding-temp/
+
+# User policies (tied to DB user accounts, useless without the DB)
+config/config/users/
+
+# All data (binary SQLite DBs, lock files, transient files)
+config/data/

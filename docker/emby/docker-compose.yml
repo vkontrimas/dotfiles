@@ -1,0 +1,16 @@
+services:
+  emby:
+    image: emby/embyserver:latest
+    container_name: embyserver
+    restart: unless-stopped
+    ports:
+      - "8096:8096"
+    volumes:
+      - ./config:/config
+      - /home/kinetic/data/plex:/data/plex
+    devices:
+      - /dev/dri:/dev/dri
+    environment:
+      - UID=1000
+      - GID=1000
+      - GIDLIST=1000

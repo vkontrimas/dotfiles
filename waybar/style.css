@@ -38,7 +38,8 @@ window#waybar {
 
 #custom-llm-label,
 #custom-pwr-label,
-#custom-sus-label {
+#custom-sus-label,
+#custom-mov-label {
   padding: 0 8px 0 4px;
   color: #5A6378;
 }
@@ -126,6 +127,25 @@ window#waybar {
 
 /* Not inhibited (red) */
 #custom-sus-inhibit.uninhibited {
+  background-color: #D95757;
+  color: #0D1017;
+}
+
+/* ── MOV button ── */
+#custom-mov-status {
+  padding: 2px 8px;
+  margin: 0 2px;
+  border-radius: 0;
+}
+
+/* Online (green) */
+#custom-mov-status.online {
+  background-color: #70BF56;
+  color: #0D1017;
+}
+
+/* Offline (red) */
+#custom-mov-status.offline {
   background-color: #D95757;
   color: #0D1017;
 }

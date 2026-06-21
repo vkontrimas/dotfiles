@@ -15,6 +15,9 @@
     "custom/llm-dual",
     "custom/llm-solo",
     "custom/sep",
+    "custom/mov-label",
+    "custom/mov-status",
+    "custom/sep",
     "custom/pwr-label",
     "custom/pwr-toggle",
     "custom/sep",
@@ -90,6 +93,17 @@
     "return-type": "json",
     "format": "{}",
     "on-click": "$HOME/.config/waybar/scripts/suspend-inhibit.sh toggle"
+  },
+
+  "custom/mov-label": {
+    "format": "MOV"
+  },
+  "custom/mov-status": {
+    "exec": "$HOME/.config/waybar/scripts/emby-server.sh button",
+    "interval": 2,
+    "return-type": "json",
+    "format": "{}",
+    "on-click": "$HOME/.config/waybar/scripts/emby-server.sh toggle"
   },
 
   "clock": {
