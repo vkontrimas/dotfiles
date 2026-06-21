@@ -7,5 +7,6 @@
     "npm:@marcfargas/pi-heartbeat"
   ],
   "hideThinkingBlock": true,
-  "defaultThinkingLevel": "high"
+  "defaultThinkingLevel": "high",
+  "theme": "dark"
 }
