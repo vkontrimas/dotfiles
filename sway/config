@@ -211,6 +211,28 @@ for_window [app_id="xdg-desktop-portal-gtk"] floating enable, resize set 1100px 
 # Transmission Torrent Options — always floating
 for_window [app_id="transmission-gtk" title="^Torrent Options$"] floating enable
 
+# Affinity apps under Wine/XWayland: normal titlebars overlap app content in tiled mode.
+# Use pixel borders so they stay managed by Sway without the broken titlebar offset.
+for_window [class="photo.exe"] border pixel 2
+for_window [class="designer.exe"] border pixel 2
+for_window [class="publisher.exe"] border pixel 2
+
+# Affinity does not like Sway tiling under Wine/XWayland: its File/Edit menu gets clipped.
+# Float the main windows, but size them to the DP-2 workspace area under Waybar.
+# DP-2 usable workspace: x=1440 y=392 width=3072 height=1696
+for_window [class="photo.exe" title="^Affinity Photo 2$"] floating enable, border pixel 2, resize set width 3072 height 1696, move absolute position 1440 392
+for_window [class="designer.exe" title="^Affinity Designer 2$"] floating enable, border pixel 2, resize set width 3072 height 1696, move absolute position 1440 392
+for_window [class="publisher.exe" title="^Affinity Publisher 2$"] floating enable, border pixel 2, resize set width 3072 height 1696, move absolute position 1440 392
+
+# Affinity secondary windows are reported by Wine as normal tiled windows, not dialogs.
+# Float them so welcome/new-document panels don't split the workspace.
+for_window [class="photo.exe" window_type="dialog"] floating enable, move position center
+for_window [class="designer.exe" window_type="dialog"] floating enable, move position center
+for_window [class="publisher.exe" window_type="dialog"] floating enable, move position center
+for_window [class="photo.exe" title="^(Lessons|New Document|Preferences|About|Account)$"] floating enable, resize set width 1073 height 650, move position center
+for_window [class="designer.exe" title="^(Lessons|New Document|Preferences|About|Account)$"] floating enable, resize set width 1073 height 650, move position center
+for_window [class="publisher.exe" title="^(Lessons|New Document|Preferences|About|Account)$"] floating enable, resize set width 1073 height 650, move position center
+
 # Scratchpad terminal — always floating, sized to span both monitors.
 for_window [app_id="scratch_term"] floating enable, resize set width 1300 height 1302
 
