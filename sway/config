@@ -83,7 +83,7 @@ bindsym $mod+Shift+e exec swaynag -t warning -m 'Exit sway?' -B 'Yes' 'swaymsg e
 
 # Screenshot active output (grim + satty)
 # Finds the output containing the focused window via swaymsg, then captures it with grim and opens in satty.
-bindsym $mod+Shift+s exec grim -o "$(swaymsg -t get_tree | jq -r '[.nodes[] | select(.type=="output") | select((recurse(.nodes[]?) | select(.focused == true)) | length > 0) | .name] | .[0]')" -t ppm - | satty --filename -
+bindsym $mod+Shift+s exec mkdir -p /home/kinetic/screenshots && grim -o "$(swaymsg -t get_tree | jq -r '[.nodes[] | select(.type=="output") | select((recurse(.nodes[]?) | select(.focused == true)) | length > 0) | .name] | .[0]')" -t ppm - | satty --filename -
 
 # Focus
 bindsym $mod+$left focus left
