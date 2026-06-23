@@ -237,6 +237,9 @@ require("lazy").setup({
             buffers = { enabled = false },
             snippets = { enabled = false },
           },
+          display = {
+            ghost_text = { enabled = false },
+          },
         }
         -- vim.lsp.set_log_level("off")
       end,
