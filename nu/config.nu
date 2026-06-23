@@ -54,6 +54,11 @@ if $homebrew_prefix != null {
 # Set editor
 $env.EDITOR = 'nvim'
 
+# Vi-style line editing (reedline). Use `Esc` to enter normal mode.
+$env.config.edit_mode = 'vi'
+$env.config.cursor_shape.vi_insert = 'line'
+$env.config.cursor_shape.vi_normal = 'block'
+
 # Add Rust/Cargo bin directory to PATH
 let home_dir = if $nu.os-info.name == 'windows' { $env.USERPROFILE } else { $env.HOME }
 let cargo_bin = $"($home_dir)/.cargo/bin"
