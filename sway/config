@@ -237,7 +237,9 @@ for_window [class="publisher.exe" title="^(Lessons|New Document|Preferences|Abou
 for_window [app_id="scratch_term"] floating enable, resize set width 1300 height 1302
 
 include /etc/sway/config.d/*
-exec ~/.config/waybar/llm/.venv/bin/python ~/.config/waybar/llm/daemon.py
+# Supervised by systemd (waybar-llm.service) so it restarts on failure instead
+# of staying dead after a suspend; start is idempotent on sway reloads.
+exec systemctl --user start waybar-llm.service
 exec waybar
 
 # Build the standard desktop layout once at login (off-screen, then revealed).

@@ -2,25 +2,40 @@
 
 Runs switch.sh directly so it knows exactly when the model transitions.
 Blocks polling during active switches to avoid state flicker.
+
+Supervised by the waybar-llm.service systemd user unit, which restarts it on
+failure. The unit captures stderr in the journal; we additionally log to a file
+so the daemon's own view of suspend/wake is visible even across restarts.
 """
 import subprocess
 import socket
 import os
 import sys
 import fcntl
+import logging
+import signal
 import threading
 import time
 
 SOCK_PATH = os.path.expanduser("~/.cache/waybar-llm.sock")
 LOCK_PATH = os.path.expanduser("~/.cache/waybar-llm.lock")
+LOG_PATH = os.path.expanduser("~/.cache/waybar-llm.log")
 ROOT_DIR = os.path.expanduser("~/local-llm/club-3090")
 CONTAINER_PREFIXES = ("vllm-", "llama-cpp-", "beellama-", "ik-llama-", "sglang-")
+
+logging.basicConfig(
+    filename=LOG_PATH,
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(message)s",
+)
+log = logging.getLogger("waybar-llm")
 
 _state = {"variant": "", "status": "unloaded"}
 _switching = False  # True while switch.sh is running
 _saved_variant = ""  # variant to restore on wake; kept in memory across suspend
 _lock = threading.Lock()
 _singleton_fp = None  # held open for the process lifetime to keep the flock
+_shutdown = False  # set by SIGTERM/SIGINT so the accept loop exits cleanly
 
 
 def acquire_singleton():
@@ -34,8 +49,16 @@ def acquire_singleton():
         sys.exit(0)
 
 
+def _request_shutdown(signum, _frame):
+    global _shutdown
+    _shutdown = True
+    log.info("received signal %s, shutting down", signum)
+
+
 def main():
     acquire_singleton()
+    signal.signal(signal.SIGTERM, _request_shutdown)
+    signal.signal(signal.SIGINT, _request_shutdown)
 
     if os.path.exists(SOCK_PATH):
         os.unlink(SOCK_PATH)
@@ -44,24 +67,41 @@ def main():
     server.bind(SOCK_PATH)
     server.listen(5)
     server.settimeout(1.0)
+    log.info("daemon started, listening on %s", SOCK_PATH)
 
     threading.Thread(target=poll_loop, daemon=True).start()
 
-    while True:
+    while not _shutdown:
         try:
             conn, _ = server.accept()
-            data = conn.recv(4096).decode().strip()
-            resp = handle(data)
-            conn.sendall(resp.encode() + b"\n")
-            conn.close()
         except socket.timeout:
             continue
         except OSError:
+            # The listening socket itself failed — can't recover, let systemd
+            # restart us rather than spin.
+            log.exception("accept() failed on the listening socket")
             break
+
+        # A single client connection must never take the daemon down: a slow
+        # teardown can outlive the caller (logind forces suspend mid-`switch.sh
+        # --down`), so by the time we reply the peer may be gone and sendall
+        # raises a broken-pipe OSError. Swallow anything from one connection.
+        try:
+            data = conn.recv(4096).decode().strip()
+            resp = handle(data)
+            conn.sendall(resp.encode() + b"\n")
+        except Exception:
+            log.exception("error handling client request")
+        finally:
+            try:
+                conn.close()
+            except OSError:
+                pass
 
     server.close()
     if os.path.exists(SOCK_PATH):
         os.unlink(SOCK_PATH)
+    log.info("daemon stopped")
 
 
 def handle(cmd):
@@ -77,6 +117,7 @@ def handle(cmd):
             # is loaded). The daemon survives suspend/resume, so an in-memory note
             # is enough — and it can't go stale the way an on-disk file would.
             _saved_variant = v
+        log.info("suspend requested; saved variant=%r", v)
         # A container in any state (loaded *or* still loading) pins the GPU, so
         # tear down whenever a variant is present.
         if not v:
@@ -88,6 +129,7 @@ def handle(cmd):
     elif cmd == "wake":
         with _lock:
             variant = _saved_variant
+        log.info("wake requested; restoring variant=%r", variant)
         if not variant:
             return "nothing to restore"
         threading.Thread(target=do_wake, args=(variant,), daemon=True).start()
@@ -132,10 +174,11 @@ def do_toggle(variant):
             # Was toggling off
             _state["variant"] = ""
             _state["status"] = "unloaded"
-        elif ret == 0:
+        elif ret.returncode == 0:
             _state["status"] = "loaded"
         else:
             _state["status"] = "error"
+    log.info("toggle %r done (rc=%s)", variant, ret.returncode)
 
 
 def do_suspend():
@@ -146,6 +189,7 @@ def do_suspend():
 
     env = os.environ.copy()
     env["PATH"] = f"{ROOT_DIR}/.venv/bin:{env.get('PATH', '')}"
+    log.info("teardown: switch.sh --down")
     subprocess.run(
         ["bash", f"{ROOT_DIR}/scripts/switch.sh", "--down"],
         stdout=subprocess.DEVNULL,
@@ -158,6 +202,7 @@ def do_suspend():
         _switching = False
         _state["variant"] = ""
         _state["status"] = "unloaded"
+    log.info("teardown complete")
 
 
 def do_wake(variant):
@@ -168,6 +213,7 @@ def do_wake(variant):
 
     env = os.environ.copy()
     env["PATH"] = f"{ROOT_DIR}/.venv/bin:{env.get('PATH', '')}"
+    log.info("wake: switch.sh %s --no-wait", variant)
     ret = subprocess.run(
         ["bash", f"{ROOT_DIR}/scripts/switch.sh", variant, "--no-wait"],
         stdout=subprocess.DEVNULL,
@@ -179,7 +225,8 @@ def do_wake(variant):
     with _lock:
         _switching = False
         _state["variant"] = variant
-        _state["status"] = "loading" if ret == 0 else "error"
+        _state["status"] = "loading" if ret.returncode == 0 else "error"
+    log.info("wake %r started (rc=%s)", variant, ret.returncode)
 
 
 def poll_loop():
@@ -191,7 +238,7 @@ def poll_loop():
                     _state["variant"] = variant
                     _state["status"] = status
         except Exception:
-            pass
+            log.debug("poll iteration failed", exc_info=True)
         time.sleep(5)
 
 

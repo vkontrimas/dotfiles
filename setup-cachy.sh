@@ -265,6 +265,15 @@ setup_links() {
         sudo install -Dm644 "$full_logind" "$logind_dropin"
     fi
 
+    # Waybar LLM daemon — supervise it as a systemd user service so it restarts
+    # on failure (it used to be a bare sway `exec` and stayed dead after suspend).
+    local llm_unit_src="$DOTFILES_DIR/systemd/waybar-llm.service"
+    local llm_unit_dst="$HOME/.config/systemd/user/waybar-llm.service"
+    mkdir -p "$(dirname "$llm_unit_dst")"
+    link_file "systemd/waybar-llm.service" "$llm_unit_dst"
+    systemctl --user daemon-reload
+    systemctl --user enable --now waybar-llm.service
+
     # Ly custom session (overrides /usr/share/wayland-sessions/sway.desktop)
     local ly_custom="/etc/ly/custom-sessions"
     if [[ -d "$ly_custom" ]]; then

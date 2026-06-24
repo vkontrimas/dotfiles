@@ -1,0 +1,21 @@
+# Installed to ~/.config/systemd/user/waybar-llm.service
+#
+# Supervises the waybar LLM poll daemon. The daemon used to be launched as a
+# bare `exec` from the sway config, so any exit (e.g. a broken client socket
+# during a suspend whose teardown outran the logind inhibit window) left it dead
+# for the rest of the session — waybar then showed "POLL DAEMON OFFLINE" until
+# the next re-login. Running it under systemd gives it Restart=on-failure and
+# puts its stderr in the journal.
+[Unit]
+Description=Waybar LLM poll daemon
+PartOf=sway-session.target
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.config/waybar/llm/.venv/bin/python %h/.config/waybar/llm/daemon.py
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=sway-session.target
