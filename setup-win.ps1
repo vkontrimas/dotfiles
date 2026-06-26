@@ -52,6 +52,8 @@ function install-deps {
         "delta"
         "jq"
 
+        "tree-sitter"
+
         "graphviz"
         "just"
         "uv"
@@ -284,8 +286,26 @@ function setup-node {
     npm --version
 }
 
+function add-local-bin-to-path {
+    $localBin = "$env:USERPROFILE\.local\bin"
+    $userPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
+
+    if (($userPath -split ";") -contains $localBin) {
+        Write-ColorHost "- ~/.local/bin already in PATH, skipping" "Green"
+        return
+    }
+
+    Write-Host "- Adding ~/.local/bin to user PATH..."
+    $newPath = (($userPath, $localBin) | Where-Object { $_ }) -join ";"
+    [System.Environment]::SetEnvironmentVariable("Path", $newPath, "User")
+    $env:PATH = "$env:PATH;$localBin"
+    Write-ColorHost "- ~/.local/bin added to PATH" "Green"
+}
+
 function setup-coding-agents {
     Write-ColorHost "--- Installing Coding Agents ---" "Blue"
+
+    add-local-bin-to-path
 
     # Install Claude Code via native installer
     if (Get-Command claude -ErrorAction SilentlyContinue) {
