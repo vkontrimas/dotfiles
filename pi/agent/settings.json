@@ -1,7 +1,7 @@
 {
   "lastChangelogVersion": "0.80.6",
   "defaultProvider": "bifrost",
-  "defaultModel": "vllm/qwen3.6-27b-autoround",
+  "defaultModel": "vllm/bonsai-ternary-27b",
   "packages": [
     "npm:@juicesharp/rpiv-web-tools",
     "npm:@marcfargas/pi-heartbeat",

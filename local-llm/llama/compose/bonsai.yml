@@ -46,10 +46,33 @@ services:
       - "8000"
       - -m
       - /models/Ternary-Bonsai-27B-Q2_0.gguf
+      # Vision: the 27B is a VLM; the Q8_0 projector enables image/screenshot/
+      # PDF input (~630 MB on the GPU). Offloaded to CUDA by default.
+      - --mmproj
+      - /models/Ternary-Bonsai-27B-mmproj-Q8_0.gguf
+      # Flash attention on — smaller, faster attention at long context, and a
+      # precondition for any future quantized KV. The 27B reference demo runs
+      # with it on.
+      - -fa
+      - "on"
+      # KV stays f16 for max quality/decode speed. This card is dedicated, so
+      # there's no reason to trade quality for KV memory we don't need (4-bit
+      # KV is a tight-VRAM tool and is slightly slower to decode). Auto-fit
+      # (the fork's default -fit on) already sizes the f16 cache to ~236k ctx.
       - --cache-type-k
       - f16
       - --cache-type-v
       - f16
+      # 27B reference sampling — applied when a client doesn't set its own
+      # (direct API calls); Pi/bifrost may override per request.
+      - --temp
+      - "0.7"
+      - --top-p
+      - "0.95"
+      - --top-k
+      - "20"
+      - --min-p
+      - "0"
       - --jinja
       - --alias
       - bonsai-ternary-27b
