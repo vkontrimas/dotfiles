@@ -1,5 +1,5 @@
 timeout 300 'swaylock -f'
 timeout 600 'test ! -f "$HOME/.cache/waybar-display-inhibit" && swaymsg "output * power off"' resume 'swaymsg "output * power on"'
 timeout 900 'systemctl suspend'
-before-sleep '$HOME/.config/waybar/llm/.venv/bin/python $HOME/.config/waybar/llm/client.py suspend; swaylock -f'
-after-resume 'swaymsg "output * power on"; $HOME/.config/waybar/llm/.venv/bin/python $HOME/.config/waybar/llm/client.py wake'
+before-sleep 'python3 $HOME/.config/waybar/llm/client.py suspend; swaylock -f'
+after-resume 'swaymsg "output * power on"; python3 $HOME/.config/waybar/llm/client.py wake'
