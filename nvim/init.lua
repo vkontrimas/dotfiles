@@ -153,6 +153,14 @@ require("lazy").setup({
       config = function()
         local ts = require("nvim-treesitter")
 
+        -- Register local Titan parser if repo exists
+        local titan_path = vim.fn.expand("~/titan/tree-sitter")
+        if vim.fn.isdirectory(titan_path) == 1 then
+          vim.treesitter.language.register("titan", "titan")
+        end
+
+        vim.filetype.add({ extension = { tn = "titan" } })
+
         ts.install({
           "cmake", "cpp", "c_sharp", "rust", "c", "lua", "bash", "markdown",
           "git_config", "git_rebase", "gitattributes", "gitcommit", "gitignore",
@@ -175,6 +183,8 @@ require("lazy").setup({
                   pcall(vim.treesitter.start, args.buf, lang)
                 end
               end)
+            elseif lang == "titan" then
+              pcall(vim.treesitter.start, args.buf, lang)
             end
           end,
         })
