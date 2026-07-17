@@ -13,7 +13,7 @@ After=graphical-session.target
 
 [Service]
 Type=simple
-ExecStart=%h/.config/waybar/llm/.venv/bin/python %h/.config/waybar/llm/daemon.py
+ExecStart=/usr/bin/env python3 %h/.config/waybar/llm/daemon.py
 Restart=on-failure
 RestartSec=2
 

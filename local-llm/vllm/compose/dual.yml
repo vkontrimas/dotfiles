@@ -1,0 +1,94 @@
+# ===========================================================================
+# Qwen3.6-27B (Lorbus AutoRound INT4 + BF16 mtp.fc preserved) — dual 3090 (TP=2)
+#
+# MTP n=3 spec-decode, fp8 KV, vision. Vanilla vllm/vllm-openai — no source
+# patches. PCIe-only (no NVLink bridge on this rig — custom all-reduce is
+# always disabled). Extracted from club-3090's
+# models/qwen3.6-27b/vllm/compose/dual/autoround-int4/fp8-mtp.yml.
+# Values are hardcoded for this rig (single-machine dotfiles, not a shared
+# template) — only the HF token and a couple of rare debug knobs stay in .env.
+# ===========================================================================
+services:
+  vllm-qwen36-27b-dual:
+    image: ${VLLM_IMAGE:-vllm/vllm-openai:v0.22.0}
+    container_name: vllm-qwen36-27b-dual
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:11434:8000"
+    volumes:
+      - /home/kinetic/data/llm-models:/root/.cache/huggingface
+      - /home/kinetic/data/llm-cache/torch_compile:/root/.cache/vllm/torch_compile_cache
+      - /home/kinetic/data/llm-cache/triton:/root/.triton/cache
+      - ../patches/chat_template.jinja:/etc/qwen-froggeric-chat-template.jinja:ro
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
+      - VLLM_WORKER_MULTIPROC_METHOD=spawn
+      # No NVLink bridge on this rig — always PCIe-only, no custom all-reduce.
+      - NCCL_P2P_DISABLE=1
+      - NCCL_CUMEM_ENABLE=0
+      - VLLM_NO_USAGE_STATS=1
+      - VLLM_USE_FLASHINFER_SAMPLER=1
+      - OMP_NUM_THREADS=1
+      - PYTORCH_CUDA_ALLOC_CONF=${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True,max_split_size_mb:512}
+    shm_size: "16gb"
+    ipc: host
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    entrypoint:
+      - bash
+      - -c
+      - |
+        # VLLM_ENFORCE_EAGER=1 in .env disables CUDA graphs — use on
+        # hardware where Cliff 2 GDN activation spikes occur at runtime.
+        # No NVLink on this rig — custom all-reduce is always disabled.
+        exec vllm serve ${VLLM_ENFORCE_EAGER:+--enforce-eager} --disable-custom-all-reduce "$@"
+      - --
+    command:
+      - --model
+      - /root/.cache/huggingface/qwen3.6-27b-autoround-int4
+      - --served-model-name
+      - qwen3.6-27b-autoround
+      - --quantization
+      - auto_round
+      - --dtype
+      - float16
+      - --tensor-parallel-size
+      - "2"
+      - --pipeline-parallel-size
+      - "1"
+      - --max-model-len
+      - "200000"
+      - --gpu-memory-utilization
+      - "0.82"
+      - --max-num-seqs
+      - "2"
+      - --max-num-batched-tokens
+      - "8192"
+      - --kv-cache-dtype
+      - "${KV_CACHE_DTYPE:-fp8_e5m2}"
+      - --trust-remote-code
+      - --chat-template
+      - /etc/qwen-froggeric-chat-template.jinja
+      - --reasoning-parser
+      - qwen3
+      - --default-chat-template-kwargs
+      - '{"enable_thinking": true}'
+      - --enable-auto-tool-choice
+      - --tool-call-parser
+      - qwen3_coder
+      - --enable-prefix-caching
+      - --enable-chunked-prefill
+      - --speculative-config
+      - '{"method":"mtp","num_speculative_tokens":3}'
+      - --override-generation-config
+      - '{"temperature":${TEMP:-0.6},"top_p":${TOP_P:-0.95},"top_k":${TOP_K:-20},"min_p":${MIN_P:-0.0},"repetition_penalty":${REPEAT_PENALTY:-1.0}}'
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"

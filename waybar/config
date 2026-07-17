@@ -21,6 +21,9 @@
     "custom/pwr-label",
     "custom/pwr-toggle",
     "custom/sep",
+    "custom/dsp-label",
+    "custom/dsp-timeout",
+    "custom/sep",
     "custom/sus-label",
     "custom/sus-inhibit",
     "custom/sep",
@@ -49,28 +52,28 @@
     "format": "LLM"
   },
   "custom/llm-status": {
-    "exec": "$HOME/.config/waybar/llm/.venv/bin/python $HOME/.config/waybar/llm/client.py health",
+    "exec": "python3 $HOME/.config/waybar/llm/client.py health",
     "interval": 10
   },
   "custom/llm-status-err": {
-    "exec": "$HOME/.config/waybar/llm/.venv/bin/python $HOME/.config/waybar/llm/client.py health-err",
+    "exec": "python3 $HOME/.config/waybar/llm/client.py health-err",
     "interval": 10,
     "return-type": "json",
     "format": "{}"
   },
   "custom/llm-dual": {
-    "exec": "$HOME/.config/waybar/llm/.venv/bin/python $HOME/.config/waybar/llm/client.py button vllm/dual DUAL",
+    "exec": "python3 $HOME/.config/waybar/llm/client.py button vllm/dual DUAL",
     "interval": 2,
     "return-type": "json",
     "format": "{}",
-    "on-click": "$HOME/.config/waybar/llm/.venv/bin/python $HOME/.config/waybar/llm/client.py toggle vllm/dual"
+    "on-click": "python3 $HOME/.config/waybar/llm/client.py toggle vllm/dual"
   },
   "custom/llm-solo": {
-    "exec": "$HOME/.config/waybar/llm/.venv/bin/python $HOME/.config/waybar/llm/client.py button llamacpp/mtp SOLO",
+    "exec": "python3 $HOME/.config/waybar/llm/client.py button vllm/solo SOLO",
     "interval": 2,
     "return-type": "json",
     "format": "{}",
-    "on-click": "$HOME/.config/waybar/llm/.venv/bin/python $HOME/.config/waybar/llm/client.py toggle llamacpp/mtp"
+    "on-click": "python3 $HOME/.config/waybar/llm/client.py toggle vllm/solo"
   },
 
   "custom/pwr-label": {
@@ -82,6 +85,17 @@
     "return-type": "json",
     "format": "{}",
     "on-click": "$HOME/.config/waybar/scripts/power-profile.sh toggle"
+  },
+
+  "custom/dsp-label": {
+    "format": "DSP"
+  },
+  "custom/dsp-timeout": {
+    "exec": "$HOME/.config/waybar/scripts/display-timeout.sh button",
+    "interval": 2,
+    "return-type": "json",
+    "format": "{}",
+    "on-click": "$HOME/.config/waybar/scripts/display-timeout.sh toggle"
   },
 
   "custom/sus-label": {

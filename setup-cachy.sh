@@ -282,15 +282,6 @@ setup_links() {
             echo -e "${GREEN}- Ly custom sway-nvidia.desktop already in place, skipping${NC}"
         else
             echo -e "${BLUE}--- Installing Ly custom sway-nvidia.desktop (NVIDIA support) ---${NC}"
-
-            # Waybar LLM service — create venv if missing
-            local llm_venv="$HOME/.config/waybar/llm/.venv"
-            if [[ ! -d "$llm_venv" ]]; then
-                echo -e "${BLUE}--- Creating waybar LLM venv ---${NC}"
-                uv venv "$llm_venv" --python 3.12
-            else
-                echo -e "${GREEN}- Waybar LLM venv already exists, skipping${NC}"
-            fi
             sudo cp "$full_desktop" "$ly_custom/sway-nvidia.desktop"
         fi
     fi

@@ -1,7 +1,9 @@
 """LLM daemon — polls GPU state, serves via Unix socket.
 
-Runs switch.sh directly so it knows exactly when the model transitions.
-Blocks polling during active switches to avoid state flicker.
+Drives `docker compose` directly against the vLLM composes in
+local-llm/vllm/compose/ (dual.yml / solo.yml) — both variants serve the same
+model/port, so switching is just: tear down whichever is up, bring up the
+other, wait for it to report ready.
 
 Supervised by the waybar-llm.service systemd user unit, which restarts it on
 failure. The unit captures stderr in the journal; we additionally log to a file
@@ -16,12 +18,17 @@ import logging
 import signal
 import threading
 import time
+from pathlib import Path
 
 SOCK_PATH = os.path.expanduser("~/.cache/waybar-llm.sock")
 LOCK_PATH = os.path.expanduser("~/.cache/waybar-llm.lock")
 LOG_PATH = os.path.expanduser("~/.cache/waybar-llm.log")
-ROOT_DIR = os.path.expanduser("~/local-llm/club-3090")
-CONTAINER_PREFIXES = ("vllm-", "llama-cpp-", "beellama-", "ik-llama-", "sglang-")
+ROOT_DIR = Path(__file__).resolve().parent.parent.parent / "local-llm" / "vllm"
+ENV_FILE = ROOT_DIR / ".env"
+COMPOSE_DIR = ROOT_DIR / "compose"
+COMPOSE_FILES = {"dual": "dual.yml", "solo": "solo.yml"}
+CONTAINER_PREFIXES = ("vllm-",)
+READY_TIMEOUT = 600
 
 logging.basicConfig(
     filename=LOG_PATH,
@@ -31,7 +38,7 @@ logging.basicConfig(
 log = logging.getLogger("waybar-llm")
 
 _state = {"variant": "", "status": "unloaded"}
-_switching = False  # True while switch.sh is running
+_switching = False  # True while a compose up/down is running
 _saved_variant = ""  # variant to restore on wake; kept in memory across suspend
 _lock = threading.Lock()
 _singleton_fp = None  # held open for the process lifetime to keep the flock
@@ -83,9 +90,9 @@ def main():
             break
 
         # A single client connection must never take the daemon down: a slow
-        # teardown can outlive the caller (logind forces suspend mid-`switch.sh
-        # --down`), so by the time we reply the peer may be gone and sendall
-        # raises a broken-pipe OSError. Swallow anything from one connection.
+        # teardown can outlive the caller (logind forces suspend mid-teardown),
+        # so by the time we reply the peer may be gone and sendall raises a
+        # broken-pipe OSError. Swallow anything from one connection.
         try:
             data = conn.recv(4096).decode().strip()
             resp = handle(data)
@@ -141,6 +148,37 @@ def handle(cmd):
     return "unknown"
 
 
+def compose(action, compose_file):
+    """Run `docker compose up -d`/`down` for one of COMPOSE_FILES's files."""
+    cmd = ["docker", "compose", "--env-file", str(ENV_FILE), "-f", str(COMPOSE_DIR / compose_file)]
+    cmd += ["up", "-d", "--remove-orphans"] if action == "up" else ["down", "--remove-orphans"]
+    return subprocess.run(
+        cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=900
+    )
+
+
+def down_all():
+    for compose_file in COMPOSE_FILES.values():
+        compose("down", compose_file)
+
+
+def wait_ready(container, timeout=READY_TIMEOUT):
+    deadline = time.time() + timeout
+    port = None
+    while time.time() < deadline:
+        state = run(["docker", "inspect", "-f", "{{.State.Running}}", container]).strip()
+        if state != "true":
+            log.error("container %s is not running while waiting for ready", container)
+            return False
+        if port is None:
+            port = get_port(container)
+        if port and is_serving(port):
+            return True
+        time.sleep(4)
+    log.error("timed out waiting for %s to become ready", container)
+    return False
+
+
 def do_toggle(variant):
     global _switching
 
@@ -148,37 +186,33 @@ def do_toggle(variant):
         active = _state["variant"]
         _switching = True
 
-    if active == variant:
-        cmd = ["bash", f"{ROOT_DIR}/scripts/switch.sh", "--down"]
-    else:
-        cmd = ["bash", f"{ROOT_DIR}/scripts/switch.sh", variant]
+    turning_off = active == variant
+    topology = variant.rsplit("/", 1)[-1]
 
-    # Immediately set loading
     with _lock:
-        _state["variant"] = variant
-        _state["status"] = "loading"
+        _state["variant"] = "" if turning_off else variant
+        _state["status"] = "unloaded" if turning_off else "loading"
 
-    env = os.environ.copy()
-    env["PATH"] = f"{ROOT_DIR}/.venv/bin:{env.get('PATH', '')}"
-    ret = subprocess.run(
-        cmd,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        env=env,
-        timeout=900,
-    )
+    down_all()
+
+    ok = turning_off
+    if not turning_off:
+        compose_file = COMPOSE_FILES.get(topology)
+        if compose_file is None:
+            log.error("unknown variant %r", variant)
+        else:
+            ret = compose("up", compose_file)
+            if ret.returncode == 0:
+                ok = wait_ready(f"vllm-qwen36-27b-{topology}")
 
     with _lock:
         _switching = False
-        if active == variant:
-            # Was toggling off
+        if turning_off:
             _state["variant"] = ""
             _state["status"] = "unloaded"
-        elif ret.returncode == 0:
-            _state["status"] = "loaded"
         else:
-            _state["status"] = "error"
-    log.info("toggle %r done (rc=%s)", variant, ret.returncode)
+            _state["status"] = "loaded" if ok else "error"
+    log.info("toggle %r done (ok=%s)", variant, ok)
 
 
 def do_suspend():
@@ -187,16 +221,8 @@ def do_suspend():
     with _lock:
         _switching = True
 
-    env = os.environ.copy()
-    env["PATH"] = f"{ROOT_DIR}/.venv/bin:{env.get('PATH', '')}"
-    log.info("teardown: switch.sh --down")
-    subprocess.run(
-        ["bash", f"{ROOT_DIR}/scripts/switch.sh", "--down"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        env=env,
-        timeout=900,
-    )
+    log.info("teardown: bringing down all compose variants")
+    down_all()
 
     with _lock:
         _switching = False
@@ -211,22 +237,16 @@ def do_wake(variant):
     with _lock:
         _switching = True
 
-    env = os.environ.copy()
-    env["PATH"] = f"{ROOT_DIR}/.venv/bin:{env.get('PATH', '')}"
-    log.info("wake: switch.sh %s --no-wait", variant)
-    ret = subprocess.run(
-        ["bash", f"{ROOT_DIR}/scripts/switch.sh", variant, "--no-wait"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        env=env,
-        timeout=900,
-    )
+    topology = variant.rsplit("/", 1)[-1]
+    compose_file = COMPOSE_FILES.get(topology)
+    log.info("wake: bringing up %s", variant)
+    ret = compose("up", compose_file) if compose_file else None
 
     with _lock:
         _switching = False
         _state["variant"] = variant
-        _state["status"] = "loading" if ret.returncode == 0 else "error"
-    log.info("wake %r started (rc=%s)", variant, ret.returncode)
+        _state["status"] = "loading" if (ret and ret.returncode == 0) else "error"
+    log.info("wake %r started (rc=%s)", variant, ret.returncode if ret else None)
 
 
 def poll_loop():
@@ -263,10 +283,10 @@ def find_container():
 
 
 def variant_of(name):
-    if any(p in name for p in ("vllm", "beellama")):
+    if "dual" in name:
         return "vllm/dual"
-    if any(p in name for p in ("llama-cpp", "ik-llama")):
-        return "llamacpp/mtp"
+    if "solo" in name:
+        return "vllm/solo"
     return ""
 
 
@@ -279,13 +299,13 @@ def get_port(name):
 
 def is_serving(port):
     try:
-        subprocess.run(
+        ret = subprocess.run(
             ["curl", "-sf", "--max-time", "2", f"http://localhost:{port}/v1/models"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             timeout=5,
         )
-        return True
+        return ret.returncode == 0
     except Exception:
         return False
 
