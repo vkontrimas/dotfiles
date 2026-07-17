@@ -40,25 +40,16 @@ services:
               device_ids: ["1"]
               capabilities: [gpu]
     command:
-      - -m
-      - /models/Ternary-Bonsai-27B-Q2_0.gguf
       - --host
       - 0.0.0.0
       - --port
       - "8000"
-      - -ngl
-      - "99"
-      # 262144 is the model's full trained context (n_ctx_train). At ~7.2GB
-      # weights + 4-bit KV, this is a tight fit on a single 24GB 3090 (rough
-      # math from the model card puts total VRAM near ~24GB at this size,
-      # i.e. almost no headroom) — if this OOMs in practice, the fallback is
-      # to lower CTX_SIZE via .env, not to silently shrink this default.
-      - --ctx-size
-      - "${CTX_SIZE:-262144}"
+      - -m
+      - /models/Ternary-Bonsai-27B-Q2_0.gguf
       - --cache-type-k
-      - q4_0
+      - f16
       - --cache-type-v
-      - q4_0
+      - f16
       - --jinja
       - --alias
       - bonsai-ternary-27b
