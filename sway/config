@@ -70,6 +70,12 @@ bindsym $mod+Shift+w exec swaylock -f
 #
 # Read `man 5 sway-input` for details.
 
+# Map the Wacom pen tablet to only the DP-2 monitor so its active area
+# matches that screen instead of stretching across all outputs.
+input "1386:891:Wacom One by Wacom M Pen" {
+    map_to_output DP-2
+}
+
 ### Key bindings
 
 # Basics
