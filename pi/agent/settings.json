@@ -1,10 +1,11 @@
 {
-  "lastChangelogVersion": "0.78.1",
-  "defaultProvider": "opencode",
-  "defaultModel": "qwen3.6-plus",
+  "lastChangelogVersion": "0.80.6",
+  "defaultProvider": "bifrost",
+  "defaultModel": "vllm/qwen3.6-27b-autoround",
   "packages": [
     "npm:@juicesharp/rpiv-web-tools",
-    "npm:@marcfargas/pi-heartbeat"
+    "npm:@marcfargas/pi-heartbeat",
+    "npm:pi-ask-user"
   ],
   "hideThinkingBlock": true,
   "defaultThinkingLevel": "high",
