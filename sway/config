@@ -248,5 +248,8 @@ include /etc/sway/config.d/*
 exec systemctl --user start waybar-llm.service
 exec waybar
 
+# Polkit authentication agent so GUI apps can prompt for root (pkexec) in Sway.
+exec /usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1
+
 # Build the standard desktop layout once at login (off-screen, then revealed).
 exec ~/.config/sway/startup-layout.sh
