@@ -69,11 +69,11 @@
     "on-click": "python3 $HOME/.config/waybar/llm/client.py toggle vllm/dual"
   },
   "custom/llm-solo": {
-    "exec": "python3 $HOME/.config/waybar/llm/client.py button vllm/solo SOLO",
+    "exec": "python3 $HOME/.config/waybar/llm/client.py button llama/bonsai SOLO",
     "interval": 2,
     "return-type": "json",
     "format": "{}",
-    "on-click": "python3 $HOME/.config/waybar/llm/client.py toggle vllm/solo"
+    "on-click": "python3 $HOME/.config/waybar/llm/client.py toggle llama/bonsai"
   },
 
   "custom/pwr-label": {

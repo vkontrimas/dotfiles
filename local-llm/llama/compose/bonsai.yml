@@ -1,0 +1,64 @@
+# ===========================================================================
+# Bonsai Ternary 27B (prism-ml/Ternary-Bonsai-27B-gguf) — llama.cpp, pinned
+# to a single 3090 (GPU index 1 — the headless card with no monitors
+# attached; index 0 drives the displays and stays untouched). Weights are
+# ~1.71 effective bits/weight (Q2_0 ternary), small enough that no
+# tensor-split across both cards is needed.
+#
+# Pinning is via `device_ids` rather than NVIDIA_VISIBLE_DEVICES=all +
+# count:all — llama.cpp has no vLLM-style tensor-parallel-size to keep it on
+# one GPU by itself; if every GPU is visible it happily splits layers across
+# all of them by default, which is not what "solo" is supposed to mean here.
+#
+# Served under its own identity (bonsai-ternary-27b) — deliberately NOT
+# aliased to vLLM's qwen3.6-27b-autoround, since this is a genuinely
+# different model (not just a different topology of the same one like
+# vllm/solo and vllm/dual were), and the point now is to compare them as
+# distinct models via bifrost/Pi rather than hide the swap.
+#
+# Mutual exclusion with vllm/dual (SOLO vs DUAL) is enforced by the waybar
+# daemon (down_all() across every variant before bringing one up), not by
+# anything in this compose file.
+# ===========================================================================
+services:
+  llamacpp-bonsai-27b:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: dotfiles-llamacpp-bonsai:latest
+    container_name: llamacpp-bonsai-27b
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:11434:8000"
+    volumes:
+      - /home/kinetic/data/llm-models/bonsai:/models:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["1"]
+              capabilities: [gpu]
+    command:
+      - -m
+      - /models/Ternary-Bonsai-27B-Q2_0.gguf
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - -ngl
+      - "99"
+      # 262144 is the model's full trained context (n_ctx_train). At ~7.2GB
+      # weights + 4-bit KV, this is a tight fit on a single 24GB 3090 (rough
+      # math from the model card puts total VRAM near ~24GB at this size,
+      # i.e. almost no headroom) — if this OOMs in practice, the fallback is
+      # to lower CTX_SIZE via .env, not to silently shrink this default.
+      - --ctx-size
+      - "${CTX_SIZE:-262144}"
+      - --cache-type-k
+      - q4_0
+      - --cache-type-v
+      - q4_0
+      - --jinja
+      - --alias
+      - bonsai-ternary-27b

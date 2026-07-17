@@ -1,9 +1,12 @@
 """LLM daemon — polls GPU state, serves via Unix socket.
 
-Drives `docker compose` directly against the vLLM composes in
-local-llm/vllm/compose/ (dual.yml / solo.yml) — both variants serve the same
-model/port, so switching is just: tear down whichever is up, bring up the
-other, wait for it to report ready.
+Drives `docker compose` directly against the composes under local-llm/ — both
+variants serve on the same host port (:11434) but as genuinely different
+models (not aliased to look the same), so switching is: tear down whichever
+is up, bring up the other, wait for it to report ready. DUAL (vllm/dual) is
+the vLLM Qwen3.6-27B setup; SOLO (llama/bonsai) is the llama.cpp Bonsai
+Ternary 27B setup, pinned to a single GPU — the two are compared as distinct
+models via bifrost/Pi, not hidden from each other.
 
 Supervised by the waybar-llm.service systemd user unit, which restarts it on
 failure. The unit captures stderr in the journal; we additionally log to a file
@@ -23,11 +26,24 @@ from pathlib import Path
 SOCK_PATH = os.path.expanduser("~/.cache/waybar-llm.sock")
 LOCK_PATH = os.path.expanduser("~/.cache/waybar-llm.lock")
 LOG_PATH = os.path.expanduser("~/.cache/waybar-llm.log")
-ROOT_DIR = Path(__file__).resolve().parent.parent.parent / "local-llm" / "vllm"
-ENV_FILE = ROOT_DIR / ".env"
-COMPOSE_DIR = ROOT_DIR / "compose"
-COMPOSE_FILES = {"dual": "dual.yml", "solo": "solo.yml"}
-CONTAINER_PREFIXES = ("vllm-",)
+DOTFILES_ROOT = Path(__file__).resolve().parent.parent.parent
+VLLM_ROOT = DOTFILES_ROOT / "local-llm" / "vllm"
+LLAMA_ROOT = DOTFILES_ROOT / "local-llm" / "llama"
+
+# Each variant carries its own root dir (and therefore its own .env/compose
+# dir) since backends live in separate local-llm/ subtrees, plus the exact
+# container name docker gives it — no more guessing a container name from a
+# topology suffix, since that only worked because every earlier variant was
+# vLLM with the same "vllm-qwen36-27b-{topology}" naming scheme.
+# vllm/solo (single-GPU vLLM Qwen3.6-27B) is no longer wired to a button —
+# SOLO now means the Bonsai llama.cpp variant instead. local-llm/vllm/compose/
+# solo.yml is left on disk untouched in case it's wanted again later, just not
+# reachable via toggle/button while it's absent from this table.
+VARIANTS = {
+    "vllm/dual": {"root": VLLM_ROOT, "compose": "dual.yml", "container": "vllm-qwen36-27b-dual"},
+    "llama/bonsai": {"root": LLAMA_ROOT, "compose": "bonsai.yml", "container": "llamacpp-bonsai-27b"},
+}
+CONTAINER_TO_VARIANT = {cfg["container"]: variant for variant, cfg in VARIANTS.items()}
 READY_TIMEOUT = 600
 
 logging.basicConfig(
@@ -148,9 +164,11 @@ def handle(cmd):
     return "unknown"
 
 
-def compose(action, compose_file):
-    """Run `docker compose up -d`/`down` for one of COMPOSE_FILES's files."""
-    cmd = ["docker", "compose", "--env-file", str(ENV_FILE), "-f", str(COMPOSE_DIR / compose_file)]
+def compose(action, variant):
+    """Run `docker compose up -d`/`down` for one of VARIANTS."""
+    cfg = VARIANTS[variant]
+    root = cfg["root"]
+    cmd = ["docker", "compose", "--env-file", str(root / ".env"), "-f", str(root / "compose" / cfg["compose"])]
     cmd += ["up", "-d", "--remove-orphans"] if action == "up" else ["down", "--remove-orphans"]
     return subprocess.run(
         cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=900
@@ -158,8 +176,8 @@ def compose(action, compose_file):
 
 
 def down_all():
-    for compose_file in COMPOSE_FILES.values():
-        compose("down", compose_file)
+    for variant in VARIANTS:
+        compose("down", variant)
 
 
 def wait_ready(container, timeout=READY_TIMEOUT):
@@ -187,7 +205,6 @@ def do_toggle(variant):
         _switching = True
 
     turning_off = active == variant
-    topology = variant.rsplit("/", 1)[-1]
 
     with _lock:
         _state["variant"] = "" if turning_off else variant
@@ -197,13 +214,12 @@ def do_toggle(variant):
 
     ok = turning_off
     if not turning_off:
-        compose_file = COMPOSE_FILES.get(topology)
-        if compose_file is None:
+        if variant not in VARIANTS:
             log.error("unknown variant %r", variant)
         else:
-            ret = compose("up", compose_file)
+            ret = compose("up", variant)
             if ret.returncode == 0:
-                ok = wait_ready(f"vllm-qwen36-27b-{topology}")
+                ok = wait_ready(VARIANTS[variant]["container"])
 
     with _lock:
         _switching = False
@@ -237,10 +253,8 @@ def do_wake(variant):
     with _lock:
         _switching = True
 
-    topology = variant.rsplit("/", 1)[-1]
-    compose_file = COMPOSE_FILES.get(topology)
     log.info("wake: bringing up %s", variant)
-    ret = compose("up", compose_file) if compose_file else None
+    ret = compose("up", variant) if variant in VARIANTS else None
 
     with _lock:
         _switching = False
@@ -277,17 +291,13 @@ def detect():
 def find_container():
     out = run(["docker", "ps", "--format", "{{.Names}}"])
     for c in out.splitlines():
-        if c.startswith(CONTAINER_PREFIXES):
+        if c in CONTAINER_TO_VARIANT:
             return c
     return ""
 
 
 def variant_of(name):
-    if "dual" in name:
-        return "vllm/dual"
-    if "solo" in name:
-        return "vllm/solo"
-    return ""
+    return CONTAINER_TO_VARIANT.get(name, "")
 
 
 def get_port(name):

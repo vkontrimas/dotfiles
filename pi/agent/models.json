@@ -12,10 +12,19 @@
       "models": [
         {
           "id": "qwen3.6-27b-autoround",
-          "name": "Qwen3.6 27B AutoRound (local vLLM — solo/dual)",
+          "name": "Qwen3.6 27B AutoRound (local vLLM — DUAL button)",
           "reasoning": true,
           "input": ["text", "image"],
           "contextWindow": 200000,
+          "maxTokens": 32768,
+          "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+        },
+        {
+          "id": "bonsai-ternary-27b",
+          "name": "Bonsai Ternary 27B (local llama.cpp — SOLO button, single GPU)",
+          "reasoning": true,
+          "input": ["text"],
+          "contextWindow": 262144,
           "maxTokens": 32768,
           "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
         }
@@ -33,10 +42,19 @@
       "models": [
         {
           "id": "vllm/qwen3.6-27b-autoround",
-          "name": "Qwen3.6 27B AutoRound — via Bifrost gateway (:11435 → vLLM)",
+          "name": "Qwen3.6 27B AutoRound — via Bifrost gateway (:11435 → DUAL)",
           "reasoning": true,
           "input": ["text", "image"],
           "contextWindow": 200000,
+          "maxTokens": 32768,
+          "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+        },
+        {
+          "id": "vllm/bonsai-ternary-27b",
+          "name": "Bonsai Ternary 27B — via Bifrost gateway (:11435 → SOLO)",
+          "reasoning": true,
+          "input": ["text"],
+          "contextWindow": 262144,
           "maxTokens": 32768,
           "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
         }
