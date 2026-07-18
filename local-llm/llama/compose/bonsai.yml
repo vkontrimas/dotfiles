@@ -66,13 +66,17 @@ services:
       # 27B reference sampling — applied when a client doesn't set its own
       # (direct API calls); Pi/bifrost may override per request.
       - --temp
-      - "0.7"
+      - "0.6"
       - --top-p
       - "0.95"
       - --top-k
       - "20"
       - --min-p
       - "0"
+      - --presence-penalty
+      - "0.05" # deviation from qwen recs: slight penalty for presence in hopes of reducing looping
+      - --repeat-penalty
+      - "1.0"
       - --jinja
       - --alias
       - bonsai-ternary-27b
