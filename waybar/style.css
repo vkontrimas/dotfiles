@@ -36,62 +36,12 @@ window#waybar {
   color: #5A6673;
 }
 
-#custom-llm-label,
 #custom-pwr-label,
 #custom-sus-label,
 #custom-mov-label,
 #custom-dsp-label {
   padding: 0 8px 0 4px;
   color: #5A6378;
-}
-
-#custom-llm-status-err {
-  padding: 0 8px;
-  color: #D95757;
-}
-
-/* ── LLM buttons ── */
-#custom-llm-dual,
-#custom-llm-solo {
-  padding: 2px 8px;
-  margin: 0 2px;
-  border-radius: 0;
-}
-
-/* Loaded (green) */
-#custom-llm-dual.loaded,
-#custom-llm-solo.loaded {
-  background-color: #70BF56;
-  color: #0D1017;
-}
-
-/* Loading (orange) */
-#custom-llm-dual.loading,
-#custom-llm-solo.loading {
-  background-color: #FFB454;
-  color: #0D1017;
-}
-
-/* Unloaded (red) */
-#custom-llm-dual.unloaded,
-#custom-llm-solo.unloaded {
-  background-color: #D95757;
-  color: #0D1017;
-}
-
-/* Error (red) */
-#custom-llm-dual.error,
-#custom-llm-solo.error {
-  background-color: #D95757;
-  color: #0D1017;
-}
-
-/* Daemon offline — button shows nothing */
-#custom-llm-dual.offline,
-#custom-llm-solo.offline {
-  min-width: 0;
-  padding: 0;
-  margin: 0;
 }
 
 /* ── PWR button ── */

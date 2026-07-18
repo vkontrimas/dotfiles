@@ -9,12 +9,6 @@
     "custom/gpu-label",
     "custom/gpu-memory",
     "custom/sep",
-    "custom/llm-label",
-    "custom/llm-status",
-    "custom/llm-status-err",
-    "custom/llm-dual",
-    "custom/llm-solo",
-    "custom/sep",
     "custom/mov-label",
     "custom/mov-status",
     "custom/sep",
@@ -46,34 +40,6 @@
   "custom/ram-memory": {
     "exec": "$HOME/.config/waybar/scripts/ram-memory.sh",
     "interval": 5
-  },
-
-  "custom/llm-label": {
-    "format": "LLM"
-  },
-  "custom/llm-status": {
-    "exec": "python3 $HOME/.config/waybar/llm/client.py health",
-    "interval": 10
-  },
-  "custom/llm-status-err": {
-    "exec": "python3 $HOME/.config/waybar/llm/client.py health-err",
-    "interval": 10,
-    "return-type": "json",
-    "format": "{}"
-  },
-  "custom/llm-dual": {
-    "exec": "python3 $HOME/.config/waybar/llm/client.py button vllm/dual DUAL",
-    "interval": 2,
-    "return-type": "json",
-    "format": "{}",
-    "on-click": "python3 $HOME/.config/waybar/llm/client.py toggle vllm/dual"
-  },
-  "custom/llm-solo": {
-    "exec": "python3 $HOME/.config/waybar/llm/client.py button llama/bonsai SOLO",
-    "interval": 2,
-    "return-type": "json",
-    "format": "{}",
-    "on-click": "python3 $HOME/.config/waybar/llm/client.py toggle llama/bonsai"
   },
 
   "custom/pwr-label": {
