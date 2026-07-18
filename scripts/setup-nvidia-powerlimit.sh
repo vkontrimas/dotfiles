@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-POWER_LIMIT_W="280"
+POWER_LIMIT_W="300"
 SERVICE_NAME="nvidia-powerlimit"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 SLEEP_HOOK="/usr/lib/systemd/system-sleep/nvidia-powerlimit"
