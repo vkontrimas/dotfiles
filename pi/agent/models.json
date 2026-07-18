@@ -54,6 +54,15 @@
           "contextWindow": 262144,
           "maxTokens": 32768,
           "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+        },
+        {
+          "id": "qwen3.6-27b-ik-iq4ks-mtp-solo",
+          "name": "Qwen3.6 27B ik_llama IQ4_KS+MTP, 213K ctx (single GPU, text-only)",
+          "reasoning": true,
+          "input": ["text"],
+          "contextWindow": 213000,
+          "maxTokens": 32768,
+          "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
         }
       ]
     },
@@ -109,6 +118,15 @@
           "reasoning": true,
           "input": ["text", "image"],
           "contextWindow": 262144,
+          "maxTokens": 32768,
+          "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+        },
+        {
+          "id": "vllm/qwen3.6-27b-ik-iq4ks-mtp-solo",
+          "name": "Qwen3.6 27B ik_llama IQ4_KS+MTP, 213K ctx, single GPU — via Bifrost gateway (:11435)",
+          "reasoning": true,
+          "input": ["text"],
+          "contextWindow": 213000,
           "maxTokens": 32768,
           "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
         }

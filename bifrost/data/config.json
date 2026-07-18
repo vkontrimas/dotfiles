@@ -52,6 +52,16 @@
             "url": "http://host.docker.internal:11434",
             "model_name": "qwen3.6-27b-ik-iq4ks-mtp-vision"
           }
+        },
+        {
+          "name": "qwen36-27b-ik-iq4ks-mtp-solo-local",
+          "value": "",
+          "models": ["qwen3.6-27b-ik-iq4ks-mtp-solo"],
+          "weight": 1.0,
+          "vllm_key_config": {
+            "url": "http://host.docker.internal:11434",
+            "model_name": "qwen3.6-27b-ik-iq4ks-mtp-solo"
+          }
         }
       ],
       "network_config": {

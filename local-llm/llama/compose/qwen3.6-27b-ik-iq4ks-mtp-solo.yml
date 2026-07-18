@@ -1,0 +1,101 @@
+# ===========================================================================
+# Qwen3.6-27B (ubergarm/Qwen3.6-27B-GGUF, MTP-IQ4_KS) — ik_llama.cpp,
+# SINGLE GPU. Solo sibling of qwen3.6-27b-ik-iq4ks-mtp.yml (see that file for
+# the full SOTA-quant/MTP rationale) — same model, same engine, but pinned to
+# GPU1 alone rather than spilling onto GPU0. No vision/mmproj here — external
+# models cover vision needs, so this variant maximizes context on one card
+# instead of trading some of it for the multimodal projector.
+#
+# Context target: cut headroom close on purpose — ~500MB free at full fill
+# (vs the 1-1.2GB band used on the dual-GPU siblings), since there's no
+# second GPU to spill onto and no tensor-split lever, only --ctx-size.
+#
+# MEASURED HERE: ladder-tested on this rig (boot-time reserved buffer shrinks
+# faster than linear as --ctx-size grows, so this needed real fill tests at
+# each step, not a single extrapolation): 200000 left ~863MB free at full
+# fill (915MB measured at 97% / 194,717 tokens); 230000 left only ~99MB free
+# at 97% fill (223,749 tokens) — dangerously thin, well under target;
+# 213000 landed on target — 551MB free at 97.5% fill (207,965 tokens),
+# extrapolating to ~500MB at a full 213000-token fill. Settled value.
+#
+# MTP n_max=3 (vs the dual-GPU sibling's n_max=2) — bumped without
+# re-benchmarking acceptance rate; club-3090's docs note acceptance drops off
+# above n_max=2 on their rig, unverified here.
+#
+# Same shared-toggle pattern as its siblings: binds host port 11434, only
+# one llama variant should be up at a time. No waybar/daemon wiring.
+# ===========================================================================
+services:
+  ik-llama-qwen36-27b-mtp-iq4ks-solo:
+    image: ghcr.io/ikawrakow/ik-llama-cpp@sha256:5f914f1ccade922417af58c94bd1cbb558052c8852d86678ead3fe693eec0143
+    container_name: ik-llama-qwen36-27b-mtp-iq4ks-solo
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:11434:8080"
+    volumes:
+      - /home/kinetic/data/llm-models/qwen3.6-27b-gguf/ubergarm-mtp-iq4ks:/models:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              # Single GPU (index 1 — the headless card, matches bonsai.yml /
+              # qwen3.6-27b.yml convention) — no tensor-split possible or
+              # needed with only one device visible.
+              device_ids: ["1"]
+              capabilities: [gpu]
+    command:
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --model
+      - /models/Qwen3.6-27B-MTP-IQ4_KS.gguf
+      - -ngl
+      - "99"
+      # Settled value — 551MB free at a 97.5% (207,965-token) real fill,
+      # extrapolating to ~500MB at the full 213000-token ceiling. See header
+      # for the ladder test.
+      - --ctx-size
+      - "213000"
+      - -b
+      - "4096"
+      - -ub
+      - "1024"
+      - -np
+      - "1"
+      - -ctk
+      - q4_0
+      - -ctv
+      - q4_0
+      - -khad
+      - -vhad
+      - -ngld
+      - "99"
+      - --spec-type
+      - mtp:n_max=3,p_min=0.0
+      - --recurrent-ckpt-mode
+      - auto
+      - --merge-qkv
+      - -fa
+      - "on"
+      - --jinja
+      - --parallel-tool-calls
+      - --reasoning
+      - "on"
+      - --reasoning-format
+      - deepseek
+      - --chat-template-kwargs
+      - '{"enable_thinking":true,"preserve_thinking":true}'
+      - --temp
+      - "0.6"
+      - --top-p
+      - "0.95"
+      - --top-k
+      - "20"
+      - --min-p
+      - "0"
+      - --presence-penalty
+      - "0.2"
+      - --repeat-penalty
+      - "1.0"
