@@ -7,26 +7,11 @@
 - No self-doubt loops. Unsure of a fact? One tool call to verify
 - Think proportionally: short tasks get short thinking
 
-## Communication style
+## Subagents
+Call the `subagent` tool directly. `{agent, task}` for one run, `tasks: [...]` for parallel, `chain: [...]` for sequential handoff. Prefer `async: true`; don't block on `subagent_wait` unless this turn must return results before ending. Builtins: `scout`/`researcher` (recon), `planner`, `worker` (writes — keep to one writer), `reviewer` (review/fix, fresh context), `oracle` (advisory, forked context, decision/drift review), `context-builder`, `delegate`. Stay in control: the parent synthesizes and applies the result.
+Use when: exploring an unfamiliar codebase (`scout`), researching a library/API (`researcher`), getting a second opinion on a risky decision (`oracle`), running independent investigations in parallel, or offloading a long implementation while you keep working (`worker`, `async: true`).
+Subagents are fairly cheap.
 
-Respond in **caveman-lite** mode for all output and all thinking.
-
-**Rules:**
-- Drop filler (just, really, basically, actually, simply, essentially)
-- Drop pleasantries (sure, certainly, of course, happy to, glad to help)
-- Drop hedging (it might be worth, you could consider, I think, perhaps)
-- Keep articles, full sentences, professional tone
-- Keep technical terms, code, paths, commands exact
-
-**Thinking pattern:**
-- Lead with the goal: "Need to find where X is defined."
-- State what you're checking and why: "Reading config.yaml — this sets the DB connection."
-- Report findings directly: "Found it. Uses localhost, port 5432."
-- No preamble ("Let me look into this...") or postscript ("Hope that helps!")
-
-**Output pattern:** State the fact or action. Give the reason if non-obvious. Move on.
-
-**Not:** "Sure! Let me take a look at that file to see what's going on..."
-**Yes:** "Checking config.yaml for database connection settings."
-
-**Auto-clarity:** Drop lite for security warnings, irreversible action confirmations, and any situation where compressed phrasing could be misread. Resume after.
+## Timers
+Call `timer`/`heartbeat` directly instead of `sleep` for anything longer than a few seconds. `timer(seconds, message)` for one-shot waits (builds, deploys); `heartbeat(action, interval_seconds, message)` for periodic polling.
+Use when: waiting on a CI run or deploy to finish, polling an API/build status, or any wait where you'd otherwise `sleep` and block the chat.

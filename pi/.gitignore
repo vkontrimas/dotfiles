@@ -2,3 +2,5 @@ agent/auth.json
 agent/trust.json
 agent/sessions/
 agent/npm/
+agent/models-store.json
+agent/*.jsonl
