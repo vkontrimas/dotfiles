@@ -22,6 +22,36 @@
             "url": "http://host.docker.internal:11434",
             "model_name": "bonsai-ternary-27b"
           }
+        },
+        {
+          "name": "qwen36-27b-q4km-local",
+          "value": "",
+          "models": ["qwen3.6-27b-mtp-q4km"],
+          "weight": 1.0,
+          "vllm_key_config": {
+            "url": "http://host.docker.internal:11434",
+            "model_name": "qwen3.6-27b-mtp-q4km"
+          }
+        },
+        {
+          "name": "qwen36-27b-ik-iq4ks-mtp-local",
+          "value": "",
+          "models": ["qwen3.6-27b-ik-iq4ks-mtp"],
+          "weight": 1.0,
+          "vllm_key_config": {
+            "url": "http://host.docker.internal:11434",
+            "model_name": "qwen3.6-27b-ik-iq4ks-mtp"
+          }
+        },
+        {
+          "name": "qwen36-27b-ik-iq4ks-mtp-vision-local",
+          "value": "",
+          "models": ["qwen3.6-27b-ik-iq4ks-mtp-vision"],
+          "weight": 1.0,
+          "vllm_key_config": {
+            "url": "http://host.docker.internal:11434",
+            "model_name": "qwen3.6-27b-ik-iq4ks-mtp-vision"
+          }
         }
       ],
       "network_config": {

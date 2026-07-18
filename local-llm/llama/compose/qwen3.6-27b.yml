@@ -1,0 +1,82 @@
+# ===========================================================================
+# Qwen3.6-27B (unsloth/Qwen3.6-27B-MTP-GGUF, Q4_K_M) — llama.cpp, pinned to
+# a single 3090 (GPU index 1), served as a direct intelligence comparison
+# against Bonsai Ternary 27B (see compose/bonsai.yml). Same image, same GPU,
+# same port, same flags — the only thing that differs (besides the weights)
+# is context size, which both files leave to the fork's auto-fit rather than
+# hardcoding, so it's not a controlled variable either way.
+#
+# Mutually exclusive with bonsai.yml: both bind host port 11434 and pin GPU
+# 1, so only one can run at a time. Bring this one up with
+# `docker compose -f compose/bonsai.yml down && docker compose -f compose/qwen3.6-27b.yml up -d`
+# (and vice versa) — no waybar/daemon wiring for this variant yet.
+#
+# Reuses Bonsai's built image (dotfiles-llamacpp-bonsai:latest) — it's a
+# fork of mainline llama.cpp with CUDA ternary support added on top, so it
+# serves a standard Q4_K_M GGUF exactly like upstream llama.cpp would.
+# ===========================================================================
+services:
+  llamacpp-qwen36-27b-q4km:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: dotfiles-llamacpp-bonsai:latest
+    container_name: llamacpp-qwen36-27b-q4km
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:11434:8000"
+    volumes:
+      - /home/kinetic/data/llm-models/qwen3.6-27b-gguf/unsloth-mtp-q4km:/models:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["1"]
+              capabilities: [gpu]
+    command:
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - -m
+      - /models/Qwen3.6-27B-Q4_K_M.gguf
+      # Vision: F16 is the smallest mmproj this repo ships (only F16/BF16/F32
+      # are available, no Q8_0 like Bonsai's) — closest match to Bonsai's
+      # choice of "smallest available, not max precision".
+      - --mmproj
+      - /models/mmproj-F16.gguf
+      # Flash attention on — matches Bonsai.
+      - -fa
+      - "on"
+      # KV stays f16 for max quality/decode speed, matching Bonsai. Q4_K_M's
+      # heavier weights (~17.1GB) leave less headroom than Bonsai's Q2_0
+      # (~6.7GB) on this 24GB card, so auto-fit (-fit on default) will land
+      # on a noticeably smaller context than Bonsai's ~236k — that's the one
+      # knob expected to differ between the two setups.
+      - --cache-type-k
+      - f16
+      - --cache-type-v
+      - f16
+      # Sampling identical to Bonsai for a fair comparison.
+      - --temp
+      - "0.6"
+      - --top-p
+      - "0.95"
+      - --top-k
+      - "20"
+      - --min-p
+      - "0"
+      - --presence-penalty
+      - "0.2"
+      - --repeat-penalty
+      - "1.0"
+      - --jinja
+      # Per Unsloth's guide for these Qwen3.6-27B quants: enable_thinking
+      # turns on reasoning mode explicitly, preserve_thinking keeps prior
+      # turns' <think> content in context on multi-turn requests. Also
+      # applied to Bonsai for parity (see compose/bonsai.yml).
+      - --chat-template-kwargs
+      - '{"enable_thinking":true,"preserve_thinking":true}'
+      - --alias
+      - qwen3.6-27b-mtp-q4km

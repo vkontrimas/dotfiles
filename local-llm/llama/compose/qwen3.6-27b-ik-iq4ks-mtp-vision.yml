@@ -1,0 +1,114 @@
+# ===========================================================================
+# Qwen3.6-27B (ubergarm/Qwen3.6-27B-GGUF, MTP-IQ4_KS) + vision — ik_llama.cpp.
+# Vision sibling of qwen3.6-27b-ik-iq4ks-mtp.yml (see that file for the full
+# SOTA-quant/MTP rationale) — same model, same engine, same dual-GPU skewed
+# split, but with the multimodal projector mounted for image input. Reuses
+# the mmproj-F16.gguf already downloaded for the Q4_K_M config (it's
+# architecture-specific, not quant-specific, so it's portable across any
+# Qwen3.6-27B GGUF regardless of the main model's quant — confirmed by
+# club-3090's own doc, which downloads it to a shared top-level path for
+# exactly this reason).
+#
+# Vision forces a smaller -b (batch size) than the text-only sibling: the
+# image-encode compute graph scales with -b, and club-3090 measured ~4GB at
+# -b 4096 (OOMs at boot with vision) vs ~1GB at -b 1024. On their single
+# 3090, club-3090 found vision's real safe-fill ceiling landed around ~160K
+# (vs ~200K text-only) — a real cost from extra fill-time runtime overhead,
+# not the mmproj's own small weight size.
+#
+# MEASURED HERE: with the dual-GPU skewed split (10%/90%) this rig has far
+# more headroom than their single-card setup, and vision turned out to cost
+# essentially nothing — a real 243,827-token fill test left 1.25GB free on
+# GPU1, matching the text-only sibling's 1.19GB almost exactly, at nearly
+# identical prefill throughput (437 vs 440 tok/s). So this variant runs at
+# the SAME --ctx-size (250000) as the text-only profile, not a reduced one.
+#
+# Same shared-toggle pattern as its siblings: binds host port 11434, only
+# one llama variant should be up at a time. No waybar/daemon wiring.
+# ===========================================================================
+services:
+  ik-llama-qwen36-27b-mtp-iq4ks-vision:
+    image: ghcr.io/ikawrakow/ik-llama-cpp@sha256:5f914f1ccade922417af58c94bd1cbb558052c8852d86678ead3fe693eec0143
+    container_name: ik-llama-qwen36-27b-mtp-iq4ks-vision
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:11434:8080"
+    volumes:
+      - /home/kinetic/data/llm-models/qwen3.6-27b-gguf/ubergarm-mtp-iq4ks:/models:ro
+      # Mounted outside /models (not nested under it) — /models is a
+      # read-only bind mount, and Docker can't create a mountpoint node for
+      # a second file-level bind mount inside an already-read-only parent.
+      - /home/kinetic/data/llm-models/qwen3.6-27b-gguf/unsloth-mtp-q4km/mmproj-F16.gguf:/mmproj/mmproj-F16.gguf:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              # Same skewed split as the text sibling — GPU0 (index 0) stays
+              # mostly free, GPU1 (index 1) carries the heavy load.
+              device_ids: ["0", "1"]
+              capabilities: [gpu]
+    command:
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --model
+      - /models/Qwen3.6-27B-MTP-IQ4_KS.gguf
+      - --mmproj
+      - /mmproj/mmproj-F16.gguf
+      - --image-min-tokens
+      - "1024"
+      - --image-max-tokens
+      - "1024"
+      - -ngl
+      - "99"
+      - --tensor-split
+      - "0.10,0.90"
+      - --ctx-size
+      - "250000"
+      # Vision requires a much smaller batch size than the text profile's
+      # -b 4096 — the image-encode compute graph scales with -b and OOMs at
+      # boot with vision at the larger value (club-3090 measured ~4GB vs
+      # ~1GB at -b 1024).
+      - -b
+      - "1024"
+      - -ub
+      - "1024"
+      - -np
+      - "1"
+      - -ctk
+      - q4_0
+      - -ctv
+      - q4_0
+      - -khad
+      - -vhad
+      - -ngld
+      - "99"
+      - --spec-type
+      - mtp:n_max=2,p_min=0.0
+      - --recurrent-ckpt-mode
+      - auto
+      - --merge-qkv
+      - -fa
+      - "on"
+      - --jinja
+      - --parallel-tool-calls
+      - --reasoning
+      - "on"
+      - --reasoning-format
+      - deepseek
+      - --chat-template-kwargs
+      - '{"enable_thinking":true,"preserve_thinking":true}'
+      - --temp
+      - "0.6"
+      - --top-p
+      - "0.95"
+      - --top-k
+      - "20"
+      - --min-p
+      - "0"
+      - --presence-penalty
+      - "0.2"
+      - --repeat-penalty
+      - "1.0"

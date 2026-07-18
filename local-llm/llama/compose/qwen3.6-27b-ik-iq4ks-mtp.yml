@@ -1,0 +1,132 @@
+# ===========================================================================
+# Qwen3.6-27B (ubergarm/Qwen3.6-27B-GGUF, MTP-IQ4_KS) — ik_llama.cpp, pinned
+# to a single 3090 (GPU index 1). Third leg of the intelligence comparison
+# alongside Bonsai Ternary 27B (compose/bonsai.yml) and mainline-llama.cpp
+# Q4_K_M (compose/qwen3.6-27b.yml), but this one targets the current SOTA
+# instead of flag-parity with Bonsai: ik_llama.cpp is a llama.cpp fork with
+# exclusive IQK imatrix quants (better quality-per-bit than mainline
+# k-quants — IQ4_KS is ~2GB smaller than Q4_K_M at tied quality per
+# club-3090's own benchmarked 8-pack eval), a built-in MTP speculative-decode
+# head, Hadamard KV-cache transforms (-khad/-vhad — better-than-f16 quantized
+# KV at zero extra VRAM), and --recurrent-ckpt-mode tuned for Qwen3.6's
+# hybrid DeltaNet SSM layers. None of this exists in mainline llama.cpp.
+# Measured ~18-20% faster decode + ~0.5-0.8GB leaner VRAM than mainline
+# Q4_K_M+MTP on the same 3090 class (club-3090 discussion #184).
+#
+# Doesn't need to run simultaneously with the other two, so it reuses the
+# same shared-toggle pattern: binds host port 11434 and pins GPU 1, same as
+# bonsai.yml / qwen3.6-27b.yml — only one of the three should be up at a
+# time. No waybar/daemon wiring for this variant.
+#
+# Pulls a prebuilt image rather than building one (no Dockerfile needed) —
+# digest-pinned rather than the rolling `:cu13-server` tag, since upstream
+# retired the legacy speculative-decode flags under the moving tag at one
+# point and broke MTP composes on a fresh pull. This is the same digest
+# club-3090 validated on their own single-3090 rig.
+#
+# --alias is NOT supported on this published image build (confirmed via
+# `llama-server --help` in-container — club-3090's docs note the published
+# image sometimes lags source on flags). Served model name falls back to
+# whatever this build reports by default; check `/v1/models` after boot.
+# ===========================================================================
+services:
+  ik-llama-qwen36-27b-mtp-iq4ks:
+    image: ghcr.io/ikawrakow/ik-llama-cpp@sha256:5f914f1ccade922417af58c94bd1cbb558052c8852d86678ead3fe693eec0143
+    container_name: ik-llama-qwen36-27b-mtp-iq4ks
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:11434:8080"
+    volumes:
+      - /home/kinetic/data/llm-models/qwen3.6-27b-gguf/ubergarm-mtp-iq4ks:/models:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              # Spilled onto both GPUs: empirically, 250K context does NOT
+              # safely fill on GPU 1 alone — a real long-prompt fill test
+              # (not just boot) drove free VRAM from ~1.85GB down to <200MB
+              # by 66% fill, well past club-3090's own documented ~200-205K
+              # safe ceiling for this quant on one 3090. Default split-mode
+              # (layer, auto-balanced across visible devices) spills the
+              # overflow onto GPU 0, which has ~23GB free.
+              device_ids: ["0", "1"]
+              capabilities: [gpu]
+    command:
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --model
+      - /models/Qwen3.6-27B-MTP-IQ4_KS.gguf
+      - -ngl
+      - "99"
+      # Skewed tensor-split: device_ids ["0","1"] exposes GPU0 first, GPU1
+      # second. GPU0 only needs to absorb the minimal overflow that doesn't
+      # fit on GPU1 alone (single-GPU-only run drove GPU1 to <200MB free by
+      # 66% fill in testing) — GPU1 is loaded as heavily as is safe. Ladder
+      # tested: 0.15/0.85 left ~19GB free on GPU0 (too conservative); 0.05/
+      # 0.95 filled 244K tokens but left only ~155MB free on GPU1 — too thin
+      # a margin for real use (no room for longer prompts/concurrent load).
+      # 0.10/0.90 is the settled value: filled 244K tokens cleanly with
+      # ~1.2GB free on GPU1 at the ceiling.
+      - --tensor-split
+      - "0.10,0.90"
+      # 250K target context — club-3090's own careful ladder-testing found
+      # 200K the real safe-fill ceiling on one 3090 (262144 boots but walls
+      # ~205K under load); confirmed on this rig too (single-GPU-only fill
+      # test drove free VRAM to <200MB by 66% fill) — hence the skewed
+      # dual-GPU split above instead.
+      - --ctx-size
+      - "250000"
+      - -b
+      - "4096"
+      - -ub
+      - "1024"
+      - -np
+      - "1"
+      - -ctk
+      - q4_0
+      - -ctv
+      - q4_0
+      # Hadamard KV transforms — better-than-f16 quantized-KV accuracy at
+      # zero extra VRAM cost. ik_llama-exclusive.
+      - -khad
+      - -vhad
+      - -ngld
+      - "99"
+      # MTP head baked into this GGUF. n_max=2 is the sweet spot per
+      # club-3090's benchmarking — acceptance rate drops sharply above that.
+      - --spec-type
+      - mtp:n_max=2,p_min=0.0
+      # Pre-allocates VRAM for Qwen3.6's hybrid DeltaNet SSM state on draft
+      # rejection instead of re-decoding — ik_llama-exclusive, tuned for
+      # this model's hybrid layers.
+      - --recurrent-ckpt-mode
+      - auto
+      - --merge-qkv
+      - -fa
+      - "on"
+      - --jinja
+      - --parallel-tool-calls
+      # Thinking ON (not club-3090's stack-wide default off) — matches the
+      # enable_thinking/preserve_thinking setup already applied to Bonsai
+      # and the Q4_K_M config, for a fair comparison.
+      - --reasoning
+      - "on"
+      - --reasoning-format
+      - deepseek
+      - --chat-template-kwargs
+      - '{"enable_thinking":true,"preserve_thinking":true}'
+      - --temp
+      - "0.6"
+      - --top-p
+      - "0.95"
+      - --top-k
+      - "20"
+      - --min-p
+      - "0"
+      - --presence-penalty
+      - "0.2"
+      - --repeat-penalty
+      - "1.0"

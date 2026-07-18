@@ -74,9 +74,17 @@ services:
       - --min-p
       - "0"
       - --presence-penalty
-      - "0.05" # deviation from qwen recs: slight penalty for presence in hopes of reducing looping
+      - "0.2" # deviation from qwen recs: slight penalty for presence in hopes of reducing looping
       - --repeat-penalty
       - "1.0"
       - --jinja
+      # enable_thinking: turns on the model's reasoning mode explicitly
+      # (rather than relying on template auto-detect). preserve_thinking:
+      # keeps prior turns' <think> content in the context on multi-turn
+      # requests instead of stripping it — per Unsloth's guide for the
+      # Qwen3.6-27B quants; trying it here too since Bonsai shares the same
+      # Qwen3.6-derived chat template family.
+      - --chat-template-kwargs
+      - '{"enable_thinking":true,"preserve_thinking":true}'
       - --alias
       - bonsai-ternary-27b
