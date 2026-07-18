@@ -16,12 +16,15 @@
 # (vs ~200K text-only) — a real cost from extra fill-time runtime overhead,
 # not the mmproj's own small weight size.
 #
-# MEASURED HERE: with the dual-GPU skewed split (10%/90%) this rig has far
-# more headroom than their single-card setup, and vision turned out to cost
-# essentially nothing — a real 243,827-token fill test left 1.25GB free on
-# GPU1, matching the text-only sibling's 1.19GB almost exactly, at nearly
-# identical prefill throughput (437 vs 440 tok/s). So this variant runs at
-# the SAME --ctx-size (250000) as the text-only profile, not a reduced one.
+# MEASURED HERE: with the dual-GPU skewed split this rig has far more
+# headroom than their single-card setup, and vision turned out to cost
+# essentially nothing extra. Pushed all the way to the model's native
+# --ctx-size (262144, full window) rather than the 250000 used earlier —
+# ladder-tested tensor-split at that ctx-size: 0.10/0.90 left only 913MB
+# free on GPU1 at a 260,250-token real fill (99.3% of ceiling); 0.11/0.89
+# wasn't re-verified after 0.12/0.88 came back clean; 0.12/0.88 left
+# 1393MB free at the same 260,250-token fill — comfortably in the ~1-1.2GB
+# target headroom band, so that's the settled value.
 #
 # Same shared-toggle pattern as its siblings: binds host port 11434, only
 # one llama variant should be up at a time. No waybar/daemon wiring.
@@ -63,10 +66,16 @@ services:
       - "1024"
       - -ngl
       - "99"
+      # Skewed toward GPU1 (index 1), same pattern as the text-only sibling,
+      # but a touch more conservative (0.12 vs 0.10) since this profile now
+      # runs at the full 262144 native ctx — see header for the ladder test.
       - --tensor-split
-      - "0.10,0.90"
+      - "0.12,0.88"
+      # Full native context (n_ctx_train=262144) — verified a real 260,250-
+      # token fill (99.3% of ceiling) completes cleanly with 1393MB free on
+      # GPU1 at this tensor-split.
       - --ctx-size
-      - "250000"
+      - "262144"
       # Vision requires a much smaller batch size than the text profile's
       # -b 4096 — the image-encode compute graph scales with -b and OOMs at
       # boot with vision at the larger value (club-3090 measured ~4GB vs
