@@ -1,12 +1,11 @@
 {
-  "lastChangelogVersion": "0.80.6",
+  "lastChangelogVersion": "0.80.10",
   "defaultProvider": "bifrost",
-  "defaultModel": "vllm/bonsai-ternary-27b",
+  "defaultModel": "vllm/qwen3.6-27b-ik-iq4ks-mtp-solo",
   "packages": [
     "npm:@juicesharp/rpiv-web-tools",
     "npm:@marcfargas/pi-heartbeat",
-    "npm:pi-ask-user",
-    "npm:pi-subagents"
+    "npm:pi-ask-user"
   ],
   "hideThinkingBlock": true,
   "defaultThinkingLevel": "high",
