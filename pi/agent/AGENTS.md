@@ -9,10 +9,11 @@ Use when:
 - exploring an unfamiliar codebase (`scout`)
 - researching a library/API (`researcher`)
 - getting a second opinion on a risky decision (`oracle`)
-- running independent focused investigations in parallel
+- having to investigate multiple distinct topics at the same time
 - offloading a long implementation while you keep working (`worker`, `async: true`).
+- performing a long task that can be pipelined in large discrete steps.
 
-Subagents are cheap so don't hesitate to use one.
+Subagents are cheap - don't hesitate using as many as you want.
 
 ## Timers
 Call `timer`/`heartbeat` directly instead of `sleep` for anything longer than a few seconds. `timer(seconds, message)` for one-shot waits (builds, deploys); `heartbeat(action, interval_seconds, message)` for periodic polling.
