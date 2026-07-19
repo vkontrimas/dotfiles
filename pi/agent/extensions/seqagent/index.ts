@@ -21,6 +21,8 @@ import { type AgentConfig, discoverAgents } from "./agents.ts";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
+const RUNNING_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
 interface StepResult {
   agent: string;
   task: string;
@@ -42,6 +44,7 @@ type StepStatus = "pending" | "running" | "done" | "error";
 interface SeqagentDetails {
   steps: Array<StepResult & { status: StepStatus }>;
   currentIndex: number;
+  frame: number;          // animation frame counter
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -210,7 +213,7 @@ export default function (pi: ExtensionAPI) {
       const tasks = params.tasks;
       const cwd = params.cwd ?? ctx.cwd;
       const results: StepResult[] = [];
-      const md: SeqagentDetails = { steps: [], currentIndex: 0 };
+      const md: SeqagentDetails = { steps: [], currentIndex: 0, frame: 0 };
 
       // Initialize pending steps
       for (let i = 0; i < tasks.length; i++) {
@@ -236,6 +239,17 @@ export default function (pi: ExtensionAPI) {
           details: md,
         });
       };
+
+      // Animation ticker — bumps frame while any step is running
+      let animFrame = 0;
+      const timer = setInterval(() => {
+        const hasRunning = md.steps.some((s) => s.status === "running");
+        if (!hasRunning) { clearInterval(timer); return; }
+        animFrame++;
+        md.frame = animFrame;
+        emit();
+      }, 120);
+
       emit();
 
       for (let i = 0; i < tasks.length; i++) {
@@ -314,11 +328,11 @@ export default function (pi: ExtensionAPI) {
         return new Text(t?.type === "text" ? t.text : "(no output)", 0, 0);
       }
 
-      const icon = (s: StepStatus) => {
-        if (s === "running") return theme.fg("warning", "⏳");
+      const icon = (s: StepStatus, frame: number) => {
+        if (s === "running") return theme.fg("accent", RUNNING_FRAMES[frame % RUNNING_FRAMES.length]);
         if (s === "error") return theme.fg("error", "✗");
         if (s === "done") return theme.fg("success", "✓");
-        return theme.fg("muted", "◻");
+        return theme.fg("muted", "◦");
       };
 
       const done = details.steps.filter((s) => s.status === "done").length;
@@ -340,7 +354,7 @@ export default function (pi: ExtensionAPI) {
         for (const s of details.steps) {
           container.addChild(new Spacer(1));
           container.addChild(new Text(
-            `${icon(s.status)} ${theme.fg("accent", s.agent)}${theme.fg("muted", ` — ${s.task}`)}`,
+            `${icon(s.status, details.frame)} ${theme.fg("accent", s.agent)}${theme.fg("muted", ` — ${s.task}`)}`,
             0, 0,
           ));
           const output = getFinalOutput(s.messages);
@@ -358,7 +372,7 @@ export default function (pi: ExtensionAPI) {
       let text = theme.fg("toolTitle", theme.bold("seqagent ")) + theme.fg("accent", status);
       for (let i = 0; i < details.steps.length; i++) {
         const s = details.steps[i];
-        text += `\n  ${icon(s.status)} ${theme.fg("muted", `${i + 1}.`) + " "}${theme.fg("accent", s.agent)}`;
+        text += `\n  ${icon(s.status, details.frame)} ${theme.fg("muted", `${i + 1}.`) + " "}${theme.fg("accent", s.agent)}`;
         const preview = s.task.length > 45 ? s.task.slice(0, 45) + "…" : s.task;
         text += theme.fg("dim", ` ${preview}`);
         if (s.status === "done") {
