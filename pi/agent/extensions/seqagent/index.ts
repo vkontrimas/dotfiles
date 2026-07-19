@@ -223,7 +223,8 @@ export default function (pi: ExtensionAPI) {
       "- Spawn for broad questions: 'how does X work?', 'map the codebase', 'find all uses of Y', 'review these changes'",
       "- Skip seqagent for narrow lookups: reading one known file, checking a function signature, a simple grep",
       "- Skip seqagent when the task depends on context from this conversation",
-      "- Use explore/investigate before planning changes; use review before committing; use research for external info",
+      "- Use explore/investigate before planning changes; use research for external info",
+      "- Use review only for large changes: 5+ files, ~500+ LOC, or architectural shifts. Skip it for small tweaks.",
     ],
     parameters: Type.Object({
       tasks: Type.Array(TaskItem, {
