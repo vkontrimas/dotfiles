@@ -401,7 +401,7 @@ export default function (pi: ExtensionAPI) {
       let header = theme.fg("toolTitle", theme.bold("seqagent ")) + theme.fg("accent", status);
       if (totalStats) header += theme.fg("dim", ` · ${totalStats}`);
 
-      let text = header;
+      let text = `\n${header}`;  // blank line to separate from renderCall above
       for (let i = 0; i < details.steps.length; i++) {
         const s = details.steps[i];
         text += `\n  ${icon(s.status, details.frame)} ${theme.fg("muted", `${i + 1}.`) + " "}${theme.fg("accent", s.agent)}`;
