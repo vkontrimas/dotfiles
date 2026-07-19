@@ -13,12 +13,12 @@ Use when:
 - offloading a long implementation while you keep working (`worker`, `async: true`).
 - performing a long task that can be pipelined in large discrete steps.
 
-Subagents are cheap - don't hesitate using as many as you want.
+Subagents are cheap — use them aggressively. **Dispatch scouts and workers early and keep going.** Use agents to augment your behaviour, not to wait for reports. Fire off recon in parallel, then continue reasoning and acting on what you already know. Check back on async results when they're ready, but never idle the main GPU waiting for them.
 
 ## Timers
 Call `timer`/`heartbeat` directly instead of `sleep` for anything longer than a few seconds. `timer(seconds, message)` for one-shot waits (builds, deploys); `heartbeat(action, interval_seconds, message)` for periodic polling.
 
 Use when:
-- waiting on a CI run or deploy to finish 
+- waiting on a CI run or deploy to finish
 - polling an API/build status
 - any wait where you'd otherwise `sleep` and block the chat.
