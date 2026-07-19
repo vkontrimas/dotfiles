@@ -66,6 +66,27 @@
         }
       ]
     },
+    "vllm-scout": {
+      "baseUrl": "http://localhost:11436/v1",
+      "api": "openai-completions",
+      "apiKey": "vllm",
+      "compat": {
+        "supportsDeveloperRole": false,
+        "supportsReasoningEffort": false,
+        "thinkingFormat": "qwen-chat-template"
+      },
+      "models": [
+        {
+          "id": "qwen3.6-35b-a3b-scout",
+          "name": "Qwen3.6 35B-A3B MoE, GPU0 scout (n-cpu-moe 16, 65K ctx)",
+          "reasoning": true,
+          "input": ["text"],
+          "contextWindow": 65536,
+          "maxTokens": 32768,
+          "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+        }
+      ]
+    },
     "bifrost": {
       "baseUrl": "http://localhost:11435/v1",
       "api": "openai-completions",
@@ -127,6 +148,15 @@
           "reasoning": true,
           "input": ["text"],
           "contextWindow": 213000,
+          "maxTokens": 32768,
+          "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+        },
+        {
+          "id": "vllm/qwen3.6-35b-a3b-scout",
+          "name": "Qwen3.6 35B-A3B MoE, GPU0 scout — via Bifrost gateway (:11435)",
+          "reasoning": true,
+          "input": ["text"],
+          "contextWindow": 65536,
           "maxTokens": 32768,
           "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
         }

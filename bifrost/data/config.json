@@ -62,6 +62,16 @@
             "url": "http://host.docker.internal:11434",
             "model_name": "qwen3.6-27b-ik-iq4ks-mtp-solo"
           }
+        },
+        {
+          "name": "qwen36-35b-a3b-scout-local",
+          "value": "",
+          "models": ["qwen3.6-35b-a3b-scout"],
+          "weight": 1.0,
+          "vllm_key_config": {
+            "url": "http://host.docker.internal:11436",
+            "model_name": "qwen3.6-35b-a3b-scout"
+          }
         }
       ],
       "network_config": {

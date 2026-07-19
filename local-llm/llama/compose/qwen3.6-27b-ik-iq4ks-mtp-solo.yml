@@ -51,6 +51,12 @@ services:
       - "8080"
       - --model
       - /models/Qwen3.6-27B-MTP-IQ4_KS.gguf
+      # Fully GPU-resident (-ngl 99) — no need to keep the file mmap'd/
+      # page-cached in host RAM after load. Added when the scout config
+      # (qwen3.6-35b-a3b-scout.yml, --cpu-moe) revealed the two containers'
+      # combined page cache was oversubscribing this rig's 46GB RAM and
+      # forcing real swap activity even at idle.
+      - --no-mmap
       - -ngl
       - "99"
       # Settled value — 551MB free at a 97.5% (207,965-token) real fill,
