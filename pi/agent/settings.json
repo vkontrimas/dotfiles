@@ -5,8 +5,7 @@
   "packages": [
     "npm:@juicesharp/rpiv-web-tools",
     "npm:@marcfargas/pi-heartbeat",
-    "npm:pi-ask-user",
-    "npm:pi-subagents"
+    "npm:pi-ask-user"
   ],
   "hideThinkingBlock": true,
   "defaultThinkingLevel": "high",
