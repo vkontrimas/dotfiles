@@ -262,8 +262,13 @@ export default function (pi: ExtensionAPI) {
       }
 
       const emit = () => {
+        const running = md.steps.filter((s) => s.status === "running").length;
+        const totalCalls = md.steps.reduce((a, s) => a + s.usage.toolCalls, 0);
+        const totalTok = md.steps.reduce((a, s) => a + s.usage.input + s.usage.output, 0);
+        const summary = `${md.currentIndex}/${tasks.length} done`;
+        const live = running > 0 ? ` · ${totalCalls} calls ${formatTokens(totalTok)} tok` : "";
         onUpdate?.({
-          content: [{ type: "text", text: `${md.currentIndex}/${tasks.length} agents done` }],
+          content: [{ type: "text", text: summary + live }],
           details: md,
         });
       };
