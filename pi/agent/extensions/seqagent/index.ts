@@ -219,6 +219,8 @@ export default function (pi: ExtensionAPI) {
     promptGuidelines: [
       `Use seqagent to delegate focused work to subagents. Each runs in a fresh context — faster and cheaper than growing this conversation. Available agents: ${agentList || "none"}.`,
       "Pass multiple tasks to seqagent to run several agents one after another. Each agent is independent — they do not share context.",
+      "Use seqagent for: exploring unfamiliar codebases, researching topics via web search, reviewing code or plans, investigating bugs and root causes.",
+      "Prefer seqagent over doing discovery work directly when the task is self-contained and doesn't depend on this conversation's context.",
     ],
     parameters: Type.Object({
       tasks: Type.Array(TaskItem, {
