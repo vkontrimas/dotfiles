@@ -120,7 +120,8 @@ async function runAgent({ agent, task, cwd, signal, onUpdate }: RunOptions): Pro
   let tmpFile: string | undefined;
   let tmpDir: string | undefined;
   if (agent.systemPrompt.trim()) {
-    const tmp = await writeTempPrompt(agent.name, agent.systemPrompt);
+    const wrapped = `<agent_instructions name="${agent.name}">\nYou are running as a subagent — an isolated pi process spawned to complete a specific task. You do not share context with the parent session.\n\n${agent.systemPrompt}\n</agent_instructions>`;
+    const tmp = await writeTempPrompt(agent.name, wrapped);
     tmpFile = tmp.file;
     tmpDir = tmp.dir;
     args.push("--append-system-prompt", tmpFile);
