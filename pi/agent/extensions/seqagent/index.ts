@@ -33,6 +33,7 @@ interface StepResult {
     input: number;
     output: number;
     turns: number;
+    toolCalls: number;
     model?: string;
   };
   stopReason?: string;
@@ -69,10 +70,18 @@ function formatTokens(n: number): string {
 
 function formatUsage(u: StepResult["usage"]): string {
   const parts: string[] = [];
-  if (u.turns) parts.push(`${u.turns}t`);
-  if (u.input) parts.push(`↑${formatTokens(u.input)}`);
-  if (u.output) parts.push(`↓${formatTokens(u.output)}`);
-  if (u.model) parts.push(u.model);
+  if (u.toolCalls) parts.push(`${u.toolCalls} calls`);
+  if (u.input || u.output) parts.push(`${formatTokens(u.input + u.output)} tok`);
+  return parts.join(" ");
+}
+
+function formatTotalStats(steps: Array<{ usage: StepResult["usage"] }>, errors: number): string {
+  const parts: string[] = [];
+  const totalCalls = steps.reduce((a, s) => a + s.usage.toolCalls, 0);
+  const totalTok = steps.reduce((a, s) => a + s.usage.input + s.usage.output, 0);
+  if (totalCalls) parts.push(`${totalCalls} calls`);
+  if (totalTok) parts.push(`${formatTokens(totalTok)} tok`);
+  if (errors) parts.push(`${errors} failed`);
   return parts.join(" ");
 }
 
@@ -124,7 +133,7 @@ async function runAgent({ agent, task, cwd, signal, onUpdate }: RunOptions): Pro
     exitCode: 0,
     messages: [],
     stderr: "",
-    usage: { input: 0, output: 0, turns: 0 },
+    usage: { input: 0, output: 0, turns: 0, toolCalls: 0 },
   };
 
   const emit = () => onUpdate?.(result);
@@ -145,6 +154,10 @@ async function runAgent({ agent, task, cwd, signal, onUpdate }: RunOptions): Pro
           result.messages.push(msg);
           if (msg.role === "assistant") {
             result.usage.turns++;
+            // Count tool calls in this assistant message
+            for (const part of msg.content) {
+              if (part.type === "toolCall") result.usage.toolCalls++;
+            }
             const u = msg.usage;
             if (u) {
               result.usage.input += u.input || 0;
@@ -237,7 +250,7 @@ export default function (pi: ExtensionAPI) {
         }
         md.steps.push({
           agent: t.agent, task: t.task, exitCode: 0, messages: [], stderr: "",
-          usage: { input: 0, output: 0, turns: 0 }, status: "pending",
+          usage: { input: 0, output: 0, turns: 0, toolCalls: 0 }, status: "pending",
         });
       }
 
@@ -377,18 +390,24 @@ export default function (pi: ExtensionAPI) {
       }
 
       // Collapsed view (or still running)
-      let text = theme.fg("toolTitle", theme.bold("seqagent ")) + theme.fg("accent", status);
+      const totalStats = formatTotalStats(details.steps, err);
+      let header = theme.fg("toolTitle", theme.bold("seqagent ")) + theme.fg("accent", status);
+      if (totalStats) header += theme.fg("dim", ` · ${totalStats}`);
+
+      let text = header;
       for (let i = 0; i < details.steps.length; i++) {
         const s = details.steps[i];
         text += `\n  ${icon(s.status, details.frame)} ${theme.fg("muted", `${i + 1}.`) + " "}${theme.fg("accent", s.agent)}`;
-        const preview = s.task.length > 45 ? s.task.slice(0, 45) + "…" : s.task;
+        const preview = s.task.length > 40 ? s.task.slice(0, 40) + "…" : s.task;
         text += theme.fg("dim", ` ${preview}`);
-        if (s.status === "done") {
+        // Live stats for running agents
+        if (s.status === "running") {
           const u = formatUsage(s.usage);
           if (u) text += theme.fg("dim", ` ${u}`);
         }
       }
-      if (!expanded && running === 0) text += `\n${theme.fg("muted", "(Ctrl+O to expand)")}`;
+      // Blank line then expand hint
+      if (!expanded && running === 0) text += `\n\n${theme.fg("muted", "(Ctrl+O to expand)")}`;
       return new Text(text, 0, 0);
     },
   });
