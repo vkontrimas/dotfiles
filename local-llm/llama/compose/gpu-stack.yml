@@ -1,25 +1,23 @@
 # ===========================================================================
-# Combined stack: the GPU1 main model (Qwen3.6-27B-MTP-IQ4_KS, single-GPU,
-# text-only) + the GPU0 scout model, running together. Each service is
-# otherwise identical to its standalone compose file — see
-# qwen3.6-27b-ik-iq4ks-mtp-solo.yml and qwen3.5-4b-scout-test.yml for the
-# full ladder-test rationale/history behind each one's flags; this file just
-# brings both up with a single `docker compose up -d` instead of two
-# separate invocations, since they're meant to run concurrently (separate
-# GPUs, separate ports — 11434 for the main model, 11436 for the scout).
+# Combined stack: GPU1 main model (Qwen3.6-27B-MTP-IQ4_KS, single-GPU,
+# text-only) + GPU0 scout model, running together.
 #
-# Scout model history: originally Qwen3.6-35B-A3B MoE with --cpu-moe/
-# --n-cpu-moe expert offload (see git history / qwen3.6-35b-a3b-scout.yml if
-# still present). Replaced with Qwen3.5-4B (dense, MTP-capable repo but MTP
-# dropped here — see below) for better -np concurrency: a dense model avoids
-# the CPU-RAM-bandwidth contention that --n-cpu-moe's offloaded experts hit
-# under concurrent requests, and its much smaller weight footprint leaves
-# far more VRAM budget for multiple parallel slots.
+# Scout: single mainline llama.cpp server with -np 4 parallel slots.
+# Replaces the old 2x ik-llama replica architecture (scout-a + scout-b)
+# that duplicated model weights across two separate processes.
 #
-# Keep both standalone files in sync with this one if either gets re-tuned —
-# this file duplicates their service blocks rather than importing them.
+# Single container = single model load (~3.7GB Q6_K), shared KV cache
+# across all slots, proper BPS continuous batching, prefix caching.
+# MTP is disabled (--np > 1 and speculative decoding are mutually exclusive
+# in llama.cpp — single-sequence draft verification only).
+#
+# Keep the GPU1 main model service in sync with
+# qwen3.6-27b-ik-iq4ks-mtp-solo.yml if that gets re-tuned.
 # ===========================================================================
 services:
+  # -----------------------------------------------------------------------
+  # GPU 1: Main model — ik_llama.cpp fork (MTP + recurrent checkpointing)
+  # -----------------------------------------------------------------------
   ik-llama-qwen36-27b-mtp-iq4ks-solo:
     image: ghcr.io/ikawrakow/ik-llama-cpp@sha256:5f914f1ccade922417af58c94bd1cbb558052c8852d86678ead3fe693eec0143
     container_name: ik-llama-qwen36-27b-mtp-iq4ks-solo
@@ -89,9 +87,14 @@ services:
       - --repeat-penalty
       - "1.0"
 
-  ik-llama-qwen35-4b-scout-a:
-    image: ghcr.io/ikawrakow/ik-llama-cpp@sha256:5f914f1ccade922417af58c94bd1cbb558052c8852d86678ead3fe693eec0143
-    container_name: ik-llama-qwen35-4b-scout-a
+  # -----------------------------------------------------------------------
+  # GPU 0: Scout — mainline llama.cpp, single process, 4 parallel slots.
+  # Model loaded ONCE (~3.7GB), shared across all slots via BPS batching.
+  # MTP disabled (--np > 1 requires it — speculative decode is single-seq).
+  # -----------------------------------------------------------------------
+  llama-qwen35-4b-scout:
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+    container_name: llama-qwen35-4b-scout
     restart: unless-stopped
     ports:
       - "0.0.0.0:11436:8080"
@@ -114,12 +117,12 @@ services:
       - --no-mmap
       - -ngl
       - "99"
+      # --ctx-size is total budget shared across all -np slots (not per-slot).
+      # 150K per slot × 4 = 600K total.
       - --ctx-size
-      - "102400"
+      - "614400"
       - -np
-      - "1"
-      - --spec-type
-      - mtp:n_max=2,p_min=0.0
+      - "4"
       - -b
       - "2048"
       - -ub
@@ -128,12 +131,9 @@ services:
       - q4_0
       - -ctv
       - q4_0
-      - -khad
-      - -vhad
       - -fa
       - "on"
       - --jinja
-      - --parallel-tool-calls
       - --reasoning
       - "off"
       - --reasoning-format
@@ -153,66 +153,26 @@ services:
       - --repeat-penalty
       - "1.0"
 
-  ik-llama-qwen35-4b-scout-b:
-    image: ghcr.io/ikawrakow/ik-llama-cpp@sha256:5f914f1ccade922417af58c94bd1cbb558052c8852d86678ead3fe693eec0143
-    container_name: ik-llama-qwen35-4b-scout-b
-    restart: unless-stopped
-    ports:
-      - "0.0.0.0:11438:8080"
-    volumes:
-      - /home/kinetic/data/llm-models/qwen3.5-4b-gguf/unsloth-mtp:/models:ro
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              device_ids: ["0"]
-              capabilities: [gpu]
-    command:
-      - --host
-      - 0.0.0.0
-      - --port
-      - "8080"
-      - --model
-      - /models/Qwen3.5-4B-Q6_K.gguf
-      - --no-mmap
-      - -ngl
-      - "99"
-      - --ctx-size
-      - "102400"
-      - -np
-      - "1"
-      - --spec-type
-      - mtp:n_max=2,p_min=0.0
-      - -b
-      - "2048"
-      - -ub
-      - "512"
-      - -ctk
-      - q4_0
-      - -ctv
-      - q4_0
-      - -khad
-      - -vhad
-      - -fa
-      - "on"
-      - --jinja
-      - --parallel-tool-calls
-      - --reasoning
-      - "off"
-      - --reasoning-format
-      - deepseek
-      - --chat-template-kwargs
-      - '{"enable_thinking":false,"preserve_thinking":false}'
-      - --temp
-      - "0.7"
-      - --top-p
-      - "0.8"
-      - --top-k
-      - "20"
-      - --min-p
-      - "0"
-      - --presence-penalty
-      - "0"
-      - --repeat-penalty
-      - "1.0"
+# ===========================================================================
+# Migration from old 2x-replica architecture
+# ===========================================================================
+#
+# Old: 2x ik-llama containers (scout-a :11436, scout-b :11438), each loading
+#      the same Qwen3.5-4B-Q6_K weights (~6.2GB each = ~12.4GB total).
+#      MTP enabled per-instance but no real concurrent batching.
+#
+# New: 1x mainline llama.cpp container (:11436), single model load (~3.7GB),
+#      4 parallel slots with BPS continuous batching and prefix caching.
+#      MTP disabled (incompatible with -np > 1).
+#
+# VRAM savings: ~12.4GB → ~3.7GB model + shared KV cache (~5-7GB total).
+#
+# Bifrost update: remove the stale -a-local and -b-local keys from the
+# internal DB (they persist even after config.json edits):
+#
+#   curl -s localhost:11435/api/providers/vllm/keys \
+#     -H "Authorization: Bearer bifrost"
+#   curl -X DELETE localhost:11435/api/providers/vllm/keys/<key_id>
+#
+# Then restart bifrost so it picks up the consolidated config.json key.
+# ===========================================================================

@@ -1,187 +1,23 @@
 # ===========================================================================
-# Qwen3.5-4B (unsloth/Qwen3.5-4B-MTP-GGUF, Q6_K) — ik_llama.cpp, GPU0.
-# Scout/subagent model, run as TWO identical replicas (instance a on port
-# 11436, instance b on port 11438). Bifrost load-balances across both under
-# the same logical model id (qwen3.5-4b-scout). Two separate OS processes
-# give real concurrent prefill (each with its own scheduler), working around
-# ik_llama.cpp's single-process batch scheduler NOT interleaving large
-# simultaneous prefills across -np slots within one process (see git log for
-# the full investigation of that limitation on the prior single-instance,
-# multi-slot config).
+# DEPRECATED — superseded by gpu-stack.yml.
 #
-# MTP RE-ENABLED: earlier dropped --spec-type entirely because `-np > 1`
-# isn't supported alongside MTP (single-sequence draft verification only).
-# With this multi-process architecture np=1 per instance anyway, so that
-# restriction no longer applies — verified the MTP head in this GGUF loads
-# and drafts correctly on ik_llama.cpp (old `mtp:n_max=...` syntax, not
-# mainline's renamed `draft-mtp`): confirmed via `common_speculative_state_mtp:
-# MTP context ready` in boot logs, and a real generation showed draft_n=104/
-# draft_n_accepted=83 (80% acceptance), decode jumping from ~63 tok/s
-# (no MTP) to ~191 tok/s.
+# The old 2x-replica architecture (scout-a + scout-b) has been replaced with
+# a single mainline llama.cpp server using -np 4 for parallel slots.
+# See gpu-stack.yml for the current configuration.
 #
-# THREE instances originally attempted (per the 3x-replica idea), but
-# base per-instance VRAM cost (weights + MTP head + fixed overhead, measured
-# by isolating context-independent cost across two ctx-size data points)
-# came out to ~6.2GB/instance — 3x that is ~18.5GB before any context,
-# leaving only ~6GB free on GPU0, below every headroom target used this
-# session. Settled on TWO instances instead: 2x6.2GB base = ~12.4GB, leaving
-# real room for both context and the 8GB+ target.
-#
-# MEASURED (per-instance, both running): --ctx-size 45056 (44K) = 11.89GB
-# free; 90112 (88K) = 10.65GB free; settled at 102400 (100K, round number)
-# per explicit override — full 100K/instance regardless of resulting
-# headroom. Initial-boot readings only, not fill-tested.
-#
-# --no-mmap on both — same rationale as the GPU1 solo fix earlier this
-# session: fully GPU-resident (-ngl 99), so no need to keep the file
-# mmap'd/page-cached in host RAM after load. With TWO separate processes
-# loading the same file, this matters more than for a single instance: with
-# mmap left on, both processes would share the same page cache (kernel
-# dedupes identical file-backed mappings), so --no-mmap means each process
-# holds its own private copy in RAM instead of sharing — worth watching RAM
-# if this strains the rig's 46GB.
-#
-# All other flags (quant rationale, reasoning-off fix, sampling params)
-# unchanged from the single-instance investigation — see git log.
-#
-# BIFROST GOTCHA: editing bifrost/data/config.json does NOT delete
-# routing keys that were removed from the file — Bifrost persists keys to
-# its own internal DB and only imports additively from config.json.
-# Renaming/removing a key here (e.g. the old single qwen35-4b-scout-local
-# entry when this split into -a-local/-b-local, or the still-earlier
-# qwen36-35b-a3b-scout-local from the pre-Qwen3.5 era) left stale entries
-# live in Bifrost's routing table indefinitely, silently splitting traffic
-# with dead/renamed backends. After any key rename/removal here, verify via
-# `curl -s localhost:11435/api/providers/vllm/keys -H "Authorization:
-# Bearer bifrost"` and delete stale ones with `curl -X DELETE
-# localhost:11435/api/providers/vllm/keys/<key_id>` (not `/api/keys/<id>` —
-# that path 405s; a container restart alone does NOT clear this).
+# Kept for reference only — do NOT deploy this file standalone.
 # ===========================================================================
-services:
-  ik-llama-qwen35-4b-scout-a:
-    image: ghcr.io/ikawrakow/ik-llama-cpp@sha256:5f914f1ccade922417af58c94bd1cbb558052c8852d86678ead3fe693eec0143
-    container_name: ik-llama-qwen35-4b-scout-a
-    restart: unless-stopped
-    ports:
-      - "0.0.0.0:11436:8080"
-    volumes:
-      - /home/kinetic/data/llm-models/qwen3.5-4b-gguf/unsloth-mtp:/models:ro
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              device_ids: ["0"]
-              capabilities: [gpu]
-    command:
-      - --host
-      - 0.0.0.0
-      - --port
-      - "8080"
-      - --model
-      - /models/Qwen3.5-4B-Q6_K.gguf
-      - --no-mmap
-      - -ngl
-      - "99"
-      - --ctx-size
-      - "102400"
-      - -np
-      - "1"
-      - --spec-type
-      - mtp:n_max=2,p_min=0.0
-      - -b
-      - "2048"
-      - -ub
-      - "512"
-      - -ctk
-      - q4_0
-      - -ctv
-      - q4_0
-      - -khad
-      - -vhad
-      - -fa
-      - "on"
-      - --jinja
-      - --parallel-tool-calls
-      - --reasoning
-      - "off"
-      - --reasoning-format
-      - deepseek
-      - --chat-template-kwargs
-      - '{"enable_thinking":false,"preserve_thinking":false}'
-      - --temp
-      - "0.7"
-      - --top-p
-      - "0.8"
-      - --top-k
-      - "20"
-      - --min-p
-      - "0"
-      - --presence-penalty
-      - "0"
-      - --repeat-penalty
-      - "1.0"
-
-  ik-llama-qwen35-4b-scout-b:
-    image: ghcr.io/ikawrakow/ik-llama-cpp@sha256:5f914f1ccade922417af58c94bd1cbb558052c8852d86678ead3fe693eec0143
-    container_name: ik-llama-qwen35-4b-scout-b
-    restart: unless-stopped
-    ports:
-      - "0.0.0.0:11438:8080"
-    volumes:
-      - /home/kinetic/data/llm-models/qwen3.5-4b-gguf/unsloth-mtp:/models:ro
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              device_ids: ["0"]
-              capabilities: [gpu]
-    command:
-      - --host
-      - 0.0.0.0
-      - --port
-      - "8080"
-      - --model
-      - /models/Qwen3.5-4B-Q6_K.gguf
-      - --no-mmap
-      - -ngl
-      - "99"
-      - --ctx-size
-      - "102400"
-      - -np
-      - "1"
-      - --spec-type
-      - mtp:n_max=2,p_min=0.0
-      - -b
-      - "2048"
-      - -ub
-      - "512"
-      - -ctk
-      - q4_0
-      - -ctv
-      - q4_0
-      - -khad
-      - -vhad
-      - -fa
-      - "on"
-      - --jinja
-      - --parallel-tool-calls
-      - --reasoning
-      - "off"
-      - --reasoning-format
-      - deepseek
-      - --chat-template-kwargs
-      - '{"enable_thinking":false,"preserve_thinking":false}'
-      - --temp
-      - "0.7"
-      - --top-p
-      - "0.8"
-      - --top-k
-      - "20"
-      - --min-p
-      - "0"
-      - --presence-penalty
-      - "0"
-      - --repeat-penalty
-      - "1.0"
+# Old architecture rationale (for historical context):
+# - Two identical ik-llama containers on GPU0 (ports 11436 + 11438)
+# - Each loaded Qwen3.5-4B-Q6_K independently (~6.2GB each = ~12.4GB total)
+# - MTP enabled per-instance (np=1, so MTP + np were compatible)
+# - Bifrost load-balanced across both under model id qwen3.5-4b-scout
+# - Workaround for ik_llama.cpp's single-process batch scheduler not
+#   interleaving large simultaneous prefills across -np slots
+#
+# New architecture (in gpu-stack.yml):
+# - Single mainline ghcr.io/ggml-org/llama.cpp:server-cuda on GPU0 (:11436)
+# - Single model load (~3.7GB), 4 parallel slots via BPS continuous batching
+# - MTP disabled (incompatible with -np > 1 in all llama.cpp variants)
+# - Proper prefix caching, no duplicate weights, real concurrent prefill
+# ===========================================================================

@@ -78,10 +78,10 @@
       "models": [
         {
           "id": "qwen3.5-4b-scout",
-          "name": "Qwen3.5 4B dense Q6_K+MTP, GPU0 scout (2x replicas, np=1, 100K ctx, no thinking)",
+          "name": "Qwen3.5 4B dense Q6_K, GPU0 scout (single server, np=4, 150K ctx, no thinking)",
           "reasoning": true,
           "input": ["text"],
-          "contextWindow": 102400,
+          "contextWindow": 153600,
           "maxTokens": 32768,
           "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
         }
@@ -153,10 +153,10 @@
         },
         {
           "id": "vllm/qwen3.5-4b-scout",
-          "name": "Qwen3.5 4B dense Q6_K+MTP, GPU0 scout (2x replicas) — via Bifrost gateway (:11435)",
+          "name": "Qwen3.5 4B dense Q6_K, GPU0 scout (np=4, 150K ctx) — via Bifrost gateway (:11435)",
           "reasoning": true,
           "input": ["text"],
-          "contextWindow": 102400,
+          "contextWindow": 153600,
           "maxTokens": 32768,
           "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
         }

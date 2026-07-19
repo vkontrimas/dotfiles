@@ -64,22 +64,12 @@
           }
         },
         {
-          "name": "qwen35-4b-scout-a-local",
+          "name": "qwen35-4b-scout-local",
           "value": "",
           "models": ["qwen3.5-4b-scout"],
           "weight": 1.0,
           "vllm_key_config": {
             "url": "http://host.docker.internal:11436",
-            "model_name": "qwen3.5-4b-scout"
-          }
-        },
-        {
-          "name": "qwen35-4b-scout-b-local",
-          "value": "",
-          "models": ["qwen3.5-4b-scout"],
-          "weight": 1.0,
-          "vllm_key_config": {
-            "url": "http://host.docker.internal:11438",
             "model_name": "qwen3.5-4b-scout"
           }
         }

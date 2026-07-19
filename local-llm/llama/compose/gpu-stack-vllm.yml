@@ -1,0 +1,179 @@
+# ===========================================================================
+# Combined stack: GPU1 main model (Qwen3.6-27B, unchanged) + GPU0 vLLM
+# scout service (Qwen3.5-9B with MTP, single service serving multiple
+# concurrent agents).
+#
+# Replaces the two ik-llama scout services from gpu-stack.yml with a
+# single vLLM instance that handles concurrent requests properly.
+#
+# Model: Qwen3.5-9B (dense, MTP-capable)
+#   - Significantly stronger than Qwen3.5-4B across all benchmarks
+#   - MMLU-Pro 82.5% vs 79.1%, GPQA Diamond 81.7% vs 76.2%
+#   - Native MTP for ~1.5-2x faster generation
+#   - Gated DeltaNet architecture: 75% linear attention = tiny KV cache
+#
+# Quantization: fp8_per_tensor (online, at load time)
+#   - Model weights: ~9.4 GB (half of BF16's ~18 GB)
+#   - Vision encoder + KV cache + overhead: ~2-3 GB
+#   - Total target: ~12 GB VRAM (hard limit: 16 GB)
+#
+# Context: 32K tokens (modest — sufficient for scout workloads)
+# MTP: num_speculative_tokens=1 (best for throughput under concurrency)
+# ===========================================================================
+services:
+  # -----------------------------------------------------------------------
+  # GPU 1: Main model — unchanged from gpu-stack.yml
+  # -----------------------------------------------------------------------
+  ik-llama-qwen36-27b-mtp-iq4ks-solo:
+    image: ghcr.io/ikawrakow/ik-llama-cpp@sha256:5f914f1ccade922417af58c94bd1cbb558052c8852d86678ead3fe693eec0143
+    container_name: ik-llama-qwen36-27b-mtp-iq4ks-solo
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:11434:8080"
+    volumes:
+      - /home/kinetic/data/llm-models/qwen3.6-27b-gguf/ubergarm-mtp-iq4ks:/models:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["1"]
+              capabilities: [gpu]
+    command:
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --model
+      - /models/Qwen3.6-27B-MTP-IQ4_KS.gguf
+      - --no-mmap
+      - -ngl
+      - "99"
+      - --ctx-size
+      - "213000"
+      - -b
+      - "4096"
+      - -ub
+      - "1024"
+      - -np
+      - "1"
+      - -ctk
+      - q4_0
+      - -ctv
+      - q4_0
+      - -khad
+      - -vhad
+      - -ngld
+      - "99"
+      - --spec-type
+      - mtp:n_max=2,p_min=0.0
+      - --recurrent-ckpt-mode
+      - auto
+      - --merge-qkv
+      - -fa
+      - "on"
+      - --jinja
+      - --parallel-tool-calls
+      - --reasoning
+      - "on"
+      - --reasoning-format
+      - deepseek
+      - --chat-template-kwargs
+      - '{"enable_thinking":true,"preserve_thinking":true}'
+      - --temp
+      - "0.6"
+      - --top-p
+      - "0.95"
+      - --top-k
+      - "20"
+      - --min-p
+      - "0"
+      - --presence-penalty
+      - "0.2"
+      - --repeat-penalty
+      - "1.0"
+
+  # -----------------------------------------------------------------------
+  # GPU 0: vLLM scout — single service, multiple concurrent requests
+  # -----------------------------------------------------------------------
+  vllm-qwen35-9b-scout:
+    image: vllm/vllm-openai:latest
+    container_name: vllm-qwen35-9b-scout
+    restart: unless-stopped
+    ports:
+      # OpenAI-compatible API on 11436 (was scout-a port)
+      - "0.0.0.0:11436:8000"
+    volumes:
+      # Cache HF downloads so restarts are fast
+      - /home/kinetic/.cache/huggingface:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0"]
+              capabilities: [gpu]
+    env_file:
+      - ../vllm/.env
+    environment:
+      # Pass HF_TOKEN through for authenticated (faster) downloads
+      - HF_TOKEN=${HF_TOKEN:-}
+    command: >
+      Qwen/Qwen3.5-9B
+      --host 0.0.0.0
+      --port 8000
+      --max-model-len 32768
+      --gpu-memory-utilization 0.50
+      --quantization fp8_per_tensor
+      --speculative-config '{"method":"mtp","num_speculative_tokens":1}'
+      --reasoning-parser qwen3
+      --default-chat-template-kwargs '{"enable_thinking": false}'
+      --enable-prefix-caching
+      --max-num-batched-tokens 32768
+      --disable-log-requests
+
+# ===========================================================================
+# Migration notes
+# ===========================================================================
+#
+# 1. First download (one-time, ~18 GB BF16 weights downloaded, then
+#    quantized to FP8 at load time — disk usage stays at ~18 GB in HF
+#    cache):
+#
+#    docker compose -f gpu-stack-vllm.yml up -d vllm-qwen35-9b-scout
+#
+#    Watch logs for "Loading weights" progress. First cold start takes
+#    a few minutes (download + quantize + warmup).
+#
+# 2. Verify it's running:
+#
+#    curl http://localhost:11436/v1/models
+#    # should return {"object":"list","data":[{"id":"Qwen/Qwen3.5-9B",...}]}
+#
+# 3. Check VRAM usage:
+#
+#    nvidia-smi
+#    # GPU 0 should show ~10-13 GB used (model + warmup cache)
+#
+# 4. Update your scout agent configs to point at:
+#
+#    base_url: http://localhost:11436/v1
+#    model:    Qwen/Qwen3.5-9B
+#    api_key:  EMPTY
+#
+# 5. Test concurrent requests (2-3 simultaneous):
+#
+#    # See test-concurrent.sh below
+#
+# 6. If VRAM > 16 GB, reduce --gpu-memory-utilization (try 0.45).
+#    If OOM at startup, reduce --max-model-len (try 16384).
+#    If MTP causes issues, remove --speculative-config.
+#
+# 7. Once verified, replace gpu-stack.yml with this file:
+#
+#    docker compose -f gpu-stack.yml down
+#    mv gpu-stack.yml gpu-stack.yml.bak
+#    mv gpu-stack-vllm.yml gpu-stack.yml
+#    docker compose -f gpu-stack.yml up -d
+#
+# ===========================================================================
