@@ -1,31 +1,37 @@
 # ===========================================================================
-# Qwen3.6-27B (unsloth/Qwen3.6-27B-MTP-GGUF, Q6_K) — MAINLINE llama.cpp,
+# Qwen3.6-27B (unsloth/Qwen3.6-27B-MTP-GGUF, Q5_K_M) — MAINLINE llama.cpp,
 # dual-GPU, text-only, MTP speculative decoding, full native context.
 #
 # Replaces the archived ik_llama.cpp single-GPU config
 # (archive/qwen3.6-27b-ik-iq4ks-mtp-solo.yml.bak). Switched off ik_llama.cpp
 # because we don't need its Hadamard KV transforms (-khad/-vhad) or
-# recurrent-checkpoint tuning to hit these targets on mainline; mainline gets
-# us a bigger (Q6_K vs IQ4_KS), higher-quality quant with room to spare once
-# spread across both GPUs, and its own MTP support (--spec-type draft-mtp,
-# renamed from ik_llama's `mtp:n_max=N` syntax) is confirmed working for this
-# model family.
+# recurrent-checkpoint tuning to hit these targets on mainline, and its own
+# MTP support (--spec-type draft-mtp, renamed from ik_llama's `mtp:n_max=N`
+# syntax) is confirmed working for this model family.
 #
 # NOTE: mainline llama.cpp does not support --mmproj + MTP together (per
 # unsloth's own Qwen3.6-27B-MTP-GGUF README: "-np > 1 and --mmproj are not
 # yet supported with MTP"). Vision was dropped from scope for this config —
 # text-only, MTP-enabled, is the priority.
 #
+# Weight quant vs KV quant tradeoff (revisited after first landing on Q6_K
+# weights + q4_0 KV): weight quantization error is static and averages out
+# across a forward pass — Q6_K is already near-lossless. KV cache
+# quantization error instead corrupts specific cached token
+# representations that attention retrieves from, and that degradation
+# compounds with distance — it hits long-context recall directly, which is
+# the whole point of running a 262K window. So KV precision matters more
+# here than shaving the last bit off already-high weight quality. Traded
+# Q6_K -> Q5_K_M weights (still very mild loss) to free enough VRAM for
+# q8_0 KV (up from q4_0) at the same full context and the same margin
+# targets.
+#
 # Architecture note: Qwen3.6-27B is a hybrid DeltaNet/full-attention model —
 # only 16 of 64 layers are real full-attention (KV-cache-bearing); the other
 # 48 are linear-attention (small fixed-size recurrent state, doesn't scale
 # with context). This is why full 262144-token context is affordable at all
-# on two 24GB cards: ~2048 KV elements/token across the 16 full-attention
-# layers, not 64. Initially tried q8_0 KV (~8.4GB total at full context) —
-# OOM'd on GPU1 even skewing the split hard toward it. Dropped to q4_0
-# KV (~4.2GB total), which closed the gap and fit comfortably within both
-# margin targets below. "Decent" quant here means q4_0, not the q8_0
-# originally hoped for — full context won out over KV precision.
+# on two 24GB cards even with q8_0 KV: ~2048 KV elements/token across the 16
+# full-attention layers, not 64.
 #
 # GPU split: explicit --tensor-split skewed heavily toward GPU1 — the goal
 # is MINIMAL GPU0 usage (headless card GPU1 should carry as much as it can
@@ -43,26 +49,34 @@
 # backwards. Fixed by treating -ts as [GPU0 fraction, GPU1 fraction]
 # unconditionally, regardless of device_ids list order.
 #
-# MEASURED: ladder-tested at full 262144 ctx-size, q4_0/q4_0 KV. -ts
-# "0.37,0.63" settled: GPU0 ~9.9-10.0GB free (target ~10GB), GPU1
-# ~600-960MB free (target ~600MB) — consistent across repeated boots
-# (small run-to-run variance from allocator fragmentation, always close to
-# target). KV cache is fully pre-allocated at boot (--ctx-size sizes it
+# GOTCHA: -ts fraction -> layer split is quantized to discrete boundaries,
+# not continuous — 0.34/0.345/0.348 all landed on the same 22-layer/GPU0
+# split, and 0.352/0.36 all landed on the same 23-layer split, with a big
+# jump in VRAM between them (~800MB per GPU). Fine 0.01-scale nudging
+# doesn't always do anything; expect to jump between a small number of
+# discrete states near your target and pick the closest one.
+#
+# MEASURED: ladder-tested at full 262144 ctx-size, Q5_K_M weights, q8_0/
+# q8_0 KV. -ts "0.34,0.66" settled: GPU0 ~10.5-10.6GB free (target ~10GB),
+# GPU1 ~480-530MB free (target ~600MB, slightly thin but stable — the next
+# discrete split up put GPU0 ~440MB under target instead, a worse
+# trade). KV cache is fully pre-allocated at boot (--ctx-size sizes it
 # upfront, doesn't grow with use) — confirmed via a real 230,008-token
-# prefill: VRAM readings were bit-for-bit identical throughout the ~6.4
-# minute prefill (598 tok/s) and after, no OOM risk from context growth.
-# MTP acceptance ~61-85% depending on prompt (measured on real requests,
-# not synthetic filler), draft_n_max=2, ~29-50 tok/s decode.
+# prefill: VRAM read 486MB free on GPU1 throughout the ~6.5 minute prefill
+# (585 tok/s) and after (vs 530MB at boot — the ~44MB delta is decode
+# scratch space, stable, no growth risk). MTP acceptance ~61-87% depending
+# on prompt (measured on real requests, not synthetic filler),
+# draft_n_max=2, ~29-60 tok/s decode.
 # ===========================================================================
 services:
-  llama-qwen36-27b-q6k-mtp:
+  llama-qwen36-27b-q5km-mtp:
     image: ghcr.io/ggml-org/llama.cpp:server-cuda
-    container_name: llama-qwen36-27b-q6k-mtp
+    container_name: llama-qwen36-27b-q5km-mtp
     restart: unless-stopped
     ports:
       - "0.0.0.0:11434:8080"
     volumes:
-      - /home/kinetic/data/llm-models/qwen3.6-27b-gguf/unsloth-mtp-q6k:/models:ro
+      - /home/kinetic/data/llm-models/qwen3.6-27b-gguf/unsloth-mtp-q5km:/models:ro
     deploy:
       resources:
         reservations:
@@ -79,17 +93,18 @@ services:
       - --port
       - "8080"
       - --model
-      - /models/Qwen3.6-27B-Q6_K.gguf
+      - /models/Qwen3.6-27B-Q5_K_M.gguf
       - --no-mmap
       - -ngl
       - "99"
       - -sm
       - layer
-      # Settled — [GPU0 fraction, GPU1 fraction]. ~9.9-10GB free on GPU0,
-      # ~600-960MB free on GPU1 at full 262144 ctx. See header for the
-      # ladder-test history and the device-order gotcha.
+      # Settled — [GPU0 fraction, GPU1 fraction]. ~10.5-10.6GB free on
+      # GPU0, ~480-530MB free on GPU1 at full 262144 ctx. See header for
+      # the ladder-test history and the device-order/layer-boundary
+      # gotchas.
       - -ts
-      - "0.37,0.63"
+      - "0.34,0.66"
       - --ctx-size
       - "262144"
       - -b
@@ -99,9 +114,9 @@ services:
       - -np
       - "1"
       - -ctk
-      - q4_0
+      - q8_0
       - -ctv
-      - q4_0
+      - q8_0
       - -fa
       - "on"
       - --spec-type

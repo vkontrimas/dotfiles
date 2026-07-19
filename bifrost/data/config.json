@@ -54,13 +54,13 @@
           }
         },
         {
-          "name": "qwen36-27b-q6k-mtp-local",
+          "name": "qwen36-27b-q5km-mtp-local",
           "value": "",
-          "models": ["qwen3.6-27b-q6k-mtp"],
+          "models": ["qwen3.6-27b-q5km-mtp"],
           "weight": 1.0,
           "vllm_key_config": {
             "url": "http://host.docker.internal:11434",
-            "model_name": "qwen3.6-27b-q6k-mtp"
+            "model_name": "qwen3.6-27b-q5km-mtp"
           }
         }
       ],
