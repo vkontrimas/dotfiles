@@ -193,12 +193,20 @@ const TaskItem = Type.Object({
 });
 
 export default function (pi: ExtensionAPI) {
+  const agents = discoverAgents();
+  const agentList = agents.map((a) => `${a.name}: ${a.description}`).join("; ");
+
   pi.registerTool({
     name: "seqagent",
     label: "Seqagent",
     description:
       "Run multiple subagents sequentially, one at a time. Each runs in an isolated pi process. " +
       "Agents are defined as markdown files. Use this to delegate focused tasks and save context.",
+    promptSnippet: "Delegate tasks to subagents that run sequentially in isolated processes",
+    promptGuidelines: [
+      `Use seqagent to delegate focused work to subagents. Each runs in a fresh context — faster and cheaper than growing this conversation. Available agents: ${agentList || "none"}.`,
+      "Pass multiple tasks to seqagent to run several agents one after another. Each agent is independent — they do not share context.",
+    ],
     parameters: Type.Object({
       tasks: Type.Array(TaskItem, {
         minItems: 1,
