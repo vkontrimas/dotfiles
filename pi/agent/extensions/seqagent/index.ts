@@ -217,14 +217,13 @@ export default function (pi: ExtensionAPI) {
       "Agents are defined as markdown files. Use this to delegate focused tasks and save context.",
     promptSnippet: "Delegate tasks to subagents that run sequentially in isolated processes",
     promptGuidelines: [
-      `Use seqagent to delegate focused work to subagents. Each runs in a fresh context — faster and cheaper than growing this conversation. Available agents: ${agentList || "none"}.`,
+      `Use seqagent to delegate focused work to subagents. Each runs in a fresh context — saves tokens and keeps this conversation lean. Available agents: ${agentList || "none"}.`,
       "Pass multiple tasks to seqagent to run several agents one after another. Each agent is independent — they do not share context.",
-      "- Use explore to map a codebase before planning changes or reading docs before implementing",
-      "- Use investigate to trace a bug or error before proposing a fix",
-      "- Use review on a diff or plan before committing or proceeding",
-      "- Use research for external info: API docs, library behavior, recent changes, benchmarks",
-      "- Run multiple agents in one call when tasks are independent (e.g. explore + research)",
-      "- Skip seqagent when the task requires context from this conversation or needs to edit files",
+      "- Spawn a subagent when the task requires browsing 3+ files, searching across directories, or would take more than ~5 tool calls here",
+      "- Spawn for broad questions: 'how does X work?', 'map the codebase', 'find all uses of Y', 'review these changes'",
+      "- Skip seqagent for narrow lookups: reading one known file, checking a function signature, a simple grep",
+      "- Skip seqagent when the task depends on context from this conversation",
+      "- Use explore/investigate before planning changes; use review before committing; use research for external info",
     ],
     parameters: Type.Object({
       tasks: Type.Array(TaskItem, {
