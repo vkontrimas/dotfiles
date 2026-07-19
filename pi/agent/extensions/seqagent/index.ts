@@ -102,9 +102,8 @@ interface RunOptions {
 }
 
 async function runAgent({ agent, task, cwd, signal, onUpdate }: RunOptions): Promise<StepResult> {
-  const args: string[] = ["--mode", "json", "-p", "--no-session"];
+  const args: string[] = ["--mode", "json", "-p", "--no-session", "--exclude-tools", "seqagent"];
   if (agent.model) args.push("--model", agent.model);
-  if (agent.tools?.length) args.push("--tools", agent.tools.join(","));
 
   let tmpFile: string | undefined;
   let tmpDir: string | undefined;

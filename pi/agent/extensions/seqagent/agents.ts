@@ -7,7 +7,6 @@ import * as path from "node:path";
 export interface AgentConfig {
   name: string;
   description: string;
-  tools?: string[];
   model?: string;
   systemPrompt: string;
 }
@@ -36,15 +35,9 @@ export function discoverAgents(): AgentConfig[] {
     const { frontmatter, body } = parseFrontmatter(content);
     if (!frontmatter.name || !frontmatter.description) continue;
 
-    const tools = frontmatter.tools
-      ?.split(",")
-        .map((t) => t.trim())
-        .filter(Boolean);
-
     agents.push({
       name: frontmatter.name,
       description: frontmatter.description,
-      tools: tools?.length ? tools : undefined,
       model: frontmatter.model,
       systemPrompt: body,
     });
