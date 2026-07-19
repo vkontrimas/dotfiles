@@ -224,7 +224,7 @@ export default function (pi: ExtensionAPI) {
       "- Skip seqagent for narrow lookups: reading one known file, checking a function signature, a simple grep",
       "- Skip seqagent when the task depends on context from this conversation",
       "- Use explore/investigate before planning changes; use research for external info",
-      "- Use review only for large changes: 5+ files, ~500+ LOC, or architectural shifts. Skip it for small tweaks.",
+      "- Use review only for large changes: 15+ files, ~15k+ LOC, or architectural shifts. Skip it for smaller work.",
       "- If the user asks for a review and the codebase is large (many files/modules), use review scoped to the relevant area — e.g. 'review the auth module' not 'review everything'.",
     ],
     parameters: Type.Object({
