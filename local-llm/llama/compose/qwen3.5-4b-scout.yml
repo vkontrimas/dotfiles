@@ -1,74 +1,66 @@
 # ===========================================================================
 # Qwen3.5-4B (unsloth/Qwen3.5-4B-MTP-GGUF, Q6_K) — ik_llama.cpp, GPU0.
-# Scout/subagent model: replaces the earlier Qwen3.6-35B-A3B MoE scout
-# (--cpu-moe/--n-cpu-moe expert offload) — dense and fully GPU-resident
-# instead, so multiple -np slots are cheap rather than contending for CPU-RAM
-# bandwidth the way offloaded MoE experts do under concurrent requests.
+# Scout/subagent model, run as TWO identical replicas (instance a on port
+# 11436, instance b on port 11438). Bifrost load-balances across both under
+# the same logical model id (qwen3.5-4b-scout). Two separate OS processes
+# give real concurrent prefill (each with its own scheduler), working around
+# ik_llama.cpp's single-process batch scheduler NOT interleaving large
+# simultaneous prefills across -np slots within one process (see git log for
+# the full investigation of that limitation on the prior single-instance,
+# multi-slot config).
 #
-# No MTP here despite the repo name — Unsloth's own model card notes
-# `-np > 1` isn't yet supported alongside MTP (single-sequence-only draft
-# verification), which directly conflicts with the goal of this config
-# (maximize concurrent slots). Dropped --spec-type entirely.
+# MTP RE-ENABLED: earlier dropped --spec-type entirely because `-np > 1`
+# isn't supported alongside MTP (single-sequence draft verification only).
+# With this multi-process architecture np=1 per instance anyway, so that
+# restriction no longer applies — verified the MTP head in this GGUF loads
+# and drafts correctly on ik_llama.cpp (old `mtp:n_max=...` syntax, not
+# mainline's renamed `draft-mtp`): confirmed via `common_speculative_state_mtp:
+# MTP context ready` in boot logs, and a real generation showed draft_n=104/
+# draft_n_accepted=83 (80% acceptance), decode jumping from ~63 tok/s
+# (no MTP) to ~191 tok/s.
 #
-# QUANT: bumped from UD-Q4_K_XL to Q6_K after observing real looping/
-# repetition at Q4 (verified via repeated-8-gram checks on list-generation
-# prompts, not just anecdotal). At Q6_K the same tests came back clean.
-# NOTE: also tried Qwen3.5-9B at the same Q6_K quant level as a "bigger is
-# safer" alternative — it actually looped WORSE than the 4B on an identical
-# test (re-drafted an entire 25-item list verbatim mid-generation), so bigger
-# is not a substitute for the quant fix here. Stuck with 4B.
+# THREE instances originally attempted (per the 3x-replica idea), but
+# base per-instance VRAM cost (weights + MTP head + fixed overhead, measured
+# by isolating context-independent cost across two ctx-size data points)
+# came out to ~6.2GB/instance — 3x that is ~18.5GB before any context,
+# leaving only ~6GB free on GPU0, below every headroom target used this
+# session. Settled on TWO instances instead: 2x6.2GB base = ~12.4GB, leaving
+# real room for both context and the 8GB+ target.
 #
-# REASONING: turned off (--reasoning off, enable_thinking:false). With
-# reasoning on, the model would sometimes burn its entire token budget
-# re-verifying/re-drafting its own answer inside the thinking block and
-# never emit actual `content` (confirmed: content came back empty after
-# 800 reasoning-only tokens on a list-generation prompt). Scout tasks
-# (recon, small edits) don't need multi-step planning anyway. With
-# reasoning off, the same tests terminate cleanly in 100-240 tokens with
-# populated content and no repeated 8-grams (occasional 1-2 duplicate list
-# items from normal sampling variance, not systemic looping).
+# MEASURED (per-instance, both running): --ctx-size 45056 (44K) = 11.89GB
+# free; 90112 (88K) = 10.65GB free; settled at 102400 (100K, round number)
+# per explicit override — full 100K/instance regardless of resulting
+# headroom. Initial-boot readings only, not fill-tested.
 #
-# SAMPLING: switched to Qwen3.5's officially documented instruct/non-thinking
-# mode params (temp/top_p differ from thinking-mode recs) — temperature=0.7,
-# top_p=0.8, top_k=20, min_p=0, repeat_penalty=1.0. presence_penalty set to
-# 0 (not the doc's recommended 1.5) per explicit override.
+# --no-mmap on both — same rationale as the GPU1 solo fix earlier this
+# session: fully GPU-resident (-ngl 99), so no need to keep the file
+# mmap'd/page-cached in host RAM after load. With TWO separate processes
+# loading the same file, this matters more than for a single instance: with
+# mmap left on, both processes would share the same page cache (kernel
+# dedupes identical file-backed mappings), so --no-mmap means each process
+# holds its own private copy in RAM instead of sharing — worth watching RAM
+# if this strains the rig's 46GB.
 #
-# MEASURED HERE: ctx-size is a TOTAL budget divided across -np slots, not
-# per-slot. Ladder-tested at Q6_K: np=2 (180K/slot, total 368640) = 15.06GB
-# free; np=4 (180K/slot, total 737280) = 11.5GB free — both comfortably
-# above the original 8-8.5GB target, so context was bumped up rather than
-# np: settled at np=4, 200K/slot (--ctx-size 800000) = 10.84GB free clean
-# boot.
+# All other flags (quant rationale, reasoning-off fix, sampling params)
+# unchanged from the single-instance investigation — see git log.
 #
-# CONCURRENCY CAVEAT (important, still applies): ik_llama.cpp's batch
-# scheduler does NOT truly interleave large simultaneous prefills across
-# slots — confirmed via server logs showing one slot fully draining its
-# prompt before rotating to the next, even though all slots get dispatched
-# within ~1s. Researched whether this is fixable via flags: NO — mainline
-# llama.cpp gained pluggable batching strategies (Decode-Maximal/
-# Prefill-Priority/Balanced) + chunked prefill in a PR merged 2026-05-16
-# specifically for this; checked our pinned ik_llama.cpp image's --help
-# directly and none of those flags exist. ik_llama.cpp is a quantization-
-# focused fork that hasn't picked up mainline's serving/batching work
-# (corroborated by ik_llama.cpp issue #1210: /slots and /health go fully
-# unresponsive during prompt processing on that server). FOLLOW-UP: if
-# concurrent heavy-prefill scouting becomes a real bottleneck, the fix is
-# moving this model to mainline llama-server instead of ik_llama.cpp (loses
-# Hadamard KV quant, gains real chunked-prefill interleaving) — not
-# attempted this round, -np still mainly benefits many short/decode-bound
-# requests rather than parallel heavy prefills landing simultaneously.
-#
-# TOOL BUDGET: subagents.overrides.scout.toolBudget is set in
-# pi/agent/settings.json as an additional safety net against runaway
-# tool-calling loops, independent of the generation-level fixes above.
-#
-# Same shared-toggle-adjacent pattern as its siblings: binds host port 11436,
-# separate from the GPU1 main model's 11434. No waybar/daemon wiring.
+# BIFROST GOTCHA: editing bifrost/data/config.json does NOT delete
+# routing keys that were removed from the file — Bifrost persists keys to
+# its own internal DB and only imports additively from config.json.
+# Renaming/removing a key here (e.g. the old single qwen35-4b-scout-local
+# entry when this split into -a-local/-b-local, or the still-earlier
+# qwen36-35b-a3b-scout-local from the pre-Qwen3.5 era) left stale entries
+# live in Bifrost's routing table indefinitely, silently splitting traffic
+# with dead/renamed backends. After any key rename/removal here, verify via
+# `curl -s localhost:11435/api/providers/vllm/keys -H "Authorization:
+# Bearer bifrost"` and delete stale ones with `curl -X DELETE
+# localhost:11435/api/providers/vllm/keys/<key_id>` (not `/api/keys/<id>` —
+# that path 405s; a container restart alone does NOT clear this).
 # ===========================================================================
 services:
-  ik-llama-qwen35-4b-scout:
+  ik-llama-qwen35-4b-scout-a:
     image: ghcr.io/ikawrakow/ik-llama-cpp@sha256:5f914f1ccade922417af58c94bd1cbb558052c8852d86678ead3fe693eec0143
-    container_name: ik-llama-qwen35-4b-scout
+    container_name: ik-llama-qwen35-4b-scout-a
     restart: unless-stopped
     ports:
       - "0.0.0.0:11436:8080"
@@ -79,9 +71,6 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              # GPU0 — the display card, normally idle in this rig's other
-              # configs (which all pin GPU1). Deliberately shares the card
-              # with the desktop/gaming workload rather than GPU1.
               device_ids: ["0"]
               capabilities: [gpu]
     command:
@@ -91,12 +80,79 @@ services:
       - "8080"
       - --model
       - /models/Qwen3.5-4B-Q6_K.gguf
+      - --no-mmap
       - -ngl
       - "99"
       - --ctx-size
-      - "800000"
+      - "102400"
       - -np
-      - "4"
+      - "1"
+      - --spec-type
+      - mtp:n_max=2,p_min=0.0
+      - -b
+      - "2048"
+      - -ub
+      - "512"
+      - -ctk
+      - q4_0
+      - -ctv
+      - q4_0
+      - -khad
+      - -vhad
+      - -fa
+      - "on"
+      - --jinja
+      - --parallel-tool-calls
+      - --reasoning
+      - "off"
+      - --reasoning-format
+      - deepseek
+      - --chat-template-kwargs
+      - '{"enable_thinking":false,"preserve_thinking":false}'
+      - --temp
+      - "0.7"
+      - --top-p
+      - "0.8"
+      - --top-k
+      - "20"
+      - --min-p
+      - "0"
+      - --presence-penalty
+      - "0"
+      - --repeat-penalty
+      - "1.0"
+
+  ik-llama-qwen35-4b-scout-b:
+    image: ghcr.io/ikawrakow/ik-llama-cpp@sha256:5f914f1ccade922417af58c94bd1cbb558052c8852d86678ead3fe693eec0143
+    container_name: ik-llama-qwen35-4b-scout-b
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:11438:8080"
+    volumes:
+      - /home/kinetic/data/llm-models/qwen3.5-4b-gguf/unsloth-mtp:/models:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0"]
+              capabilities: [gpu]
+    command:
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --model
+      - /models/Qwen3.5-4B-Q6_K.gguf
+      - --no-mmap
+      - -ngl
+      - "99"
+      - --ctx-size
+      - "102400"
+      - -np
+      - "1"
+      - --spec-type
+      - mtp:n_max=2,p_min=0.0
       - -b
       - "2048"
       - -ub
