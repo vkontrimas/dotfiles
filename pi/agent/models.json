@@ -77,11 +77,11 @@
       },
       "models": [
         {
-          "id": "qwen3.6-35b-a3b-scout",
-          "name": "Qwen3.6 35B-A3B MoE, GPU0 scout (n-cpu-moe 16, 65K ctx)",
+          "id": "qwen3.5-4b-scout",
+          "name": "Qwen3.5 4B dense, GPU0 scout (np=5, 180K ctx/slot)",
           "reasoning": true,
           "input": ["text"],
-          "contextWindow": 65536,
+          "contextWindow": 180224,
           "maxTokens": 32768,
           "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
         }
@@ -152,11 +152,11 @@
           "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
         },
         {
-          "id": "vllm/qwen3.6-35b-a3b-scout",
-          "name": "Qwen3.6 35B-A3B MoE, GPU0 scout — via Bifrost gateway (:11435)",
+          "id": "vllm/qwen3.5-4b-scout",
+          "name": "Qwen3.5 4B dense, GPU0 scout — via Bifrost gateway (:11435)",
           "reasoning": true,
           "input": ["text"],
-          "contextWindow": 65536,
+          "contextWindow": 180224,
           "maxTokens": 32768,
           "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
         }

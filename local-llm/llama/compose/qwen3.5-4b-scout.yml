@@ -1,0 +1,107 @@
+# ===========================================================================
+# Qwen3.5-4B (unsloth/Qwen3.5-4B-MTP-GGUF, UD-Q4_K_XL) — ik_llama.cpp, GPU0.
+# Scout/subagent model: replaces the earlier Qwen3.6-35B-A3B MoE scout
+# (--cpu-moe/--n-cpu-moe expert offload) — dense and fully GPU-resident
+# instead, so multiple -np slots are cheap rather than contending for CPU-RAM
+# bandwidth the way offloaded MoE experts do under concurrent requests. Much
+# smaller weight footprint (4B vs 35B total) also leaves far more VRAM budget
+# for parallel slots.
+#
+# No MTP here despite the repo name — Unsloth's own model card notes
+# `-np > 1` isn't yet supported alongside MTP (single-sequence-only draft
+# verification), which directly conflicts with the goal of this config
+# (maximize concurrent slots). Dropped --spec-type entirely; the same GGUF
+# files work fine without it, just without the speculative-decode speedup.
+#
+# MEASURED HERE: ctx-size is a TOTAL budget divided across -np slots, not
+# per-slot, and the marginal VRAM cost per slot roughly doubles when per-slot
+# context doubles (consistent with KV cost scaling on total context tokens,
+# not slot count alone) — ladder-tested at 64K/slot (np 4 to 32), 128K/slot
+# (np 8-9), then re-aimed at np=6 with per-slot context maximized: 192K/slot
+# measured 7.66GB free (too thin), 180K/slot (--ctx-size 1105920) landed at
+# 8.5GB free clean-boot / 8.47GB after a real request. Settled DOWN from
+# there to np=5 at the same 180K/slot (--ctx-size 921600) per final steer —
+# 10.56GB free, more headroom than the original 8-8.5GB target but simpler
+# and safer given the concurrency caveat below.
+#
+# CONCURRENCY CAVEAT (important): tested 6 simultaneous ~165K-token fill
+# requests and found the server does NOT truly interleave large prefills
+# across slots — it drains one slot's full prompt through consecutive
+# micro-batches before rotating to the next, even though all slots get
+# dispatched/assigned within the same ~1s window. -np mainly buys concurrency
+# for many short/decode-bound requests, not parallel heavy scouting prefills
+# landing simultaneously — real-world benefit will be smaller than the raw
+# slot count suggests for prefill-heavy concurrent use.
+#
+# --presence-penalty 0 (not the 0.2 used on other configs' sampling) per
+# Qwen's own recommended defaults for this model — a nonzero presence
+# penalty was flagged as a possible perf/quality deviation worth avoiding
+# here.
+#
+# Same shared-toggle-adjacent pattern as its siblings: binds host port 11436,
+# separate from the GPU1 main model's 11434. No waybar/daemon wiring.
+# ===========================================================================
+services:
+  ik-llama-qwen35-4b-scout:
+    image: ghcr.io/ikawrakow/ik-llama-cpp@sha256:5f914f1ccade922417af58c94bd1cbb558052c8852d86678ead3fe693eec0143
+    container_name: ik-llama-qwen35-4b-scout
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:11436:8080"
+    volumes:
+      - /home/kinetic/data/llm-models/qwen3.5-4b-gguf/unsloth-mtp:/models:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              # GPU0 — the display card, normally idle in this rig's other
+              # configs (which all pin GPU1). Deliberately shares the card
+              # with the desktop/gaming workload rather than GPU1.
+              device_ids: ["0"]
+              capabilities: [gpu]
+    command:
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --model
+      - /models/Qwen3.5-4B-UD-Q4_K_XL.gguf
+      - -ngl
+      - "99"
+      - --ctx-size
+      - "921600"
+      - -np
+      - "5"
+      - -b
+      - "2048"
+      - -ub
+      - "512"
+      - -ctk
+      - q4_0
+      - -ctv
+      - q4_0
+      - -khad
+      - -vhad
+      - -fa
+      - "on"
+      - --jinja
+      - --parallel-tool-calls
+      - --reasoning
+      - "on"
+      - --reasoning-format
+      - deepseek
+      - --chat-template-kwargs
+      - '{"enable_thinking":true,"preserve_thinking":true}'
+      - --temp
+      - "0.6"
+      - --top-p
+      - "0.95"
+      - --top-k
+      - "20"
+      - --min-p
+      - "0"
+      - --presence-penalty
+      - "0"
+      - --repeat-penalty
+      - "1.0"

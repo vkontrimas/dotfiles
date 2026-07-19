@@ -1,12 +1,20 @@
 # ===========================================================================
 # Combined stack: the GPU1 main model (Qwen3.6-27B-MTP-IQ4_KS, single-GPU,
-# text-only) + the GPU0 scout model (Qwen3.6-35B-A3B MoE, --n-cpu-moe) running
-# together. Each service is otherwise identical to its standalone compose
-# file — see qwen3.6-27b-ik-iq4ks-mtp-solo.yml and qwen3.6-35b-a3b-scout.yml
-# for the full ladder-test rationale/history behind each one's flags; this
-# file just brings both up with a single `docker compose up -d` instead of
-# two separate invocations, since they're meant to run concurrently (separate
+# text-only) + the GPU0 scout model, running together. Each service is
+# otherwise identical to its standalone compose file — see
+# qwen3.6-27b-ik-iq4ks-mtp-solo.yml and qwen3.5-4b-scout-test.yml for the
+# full ladder-test rationale/history behind each one's flags; this file just
+# brings both up with a single `docker compose up -d` instead of two
+# separate invocations, since they're meant to run concurrently (separate
 # GPUs, separate ports — 11434 for the main model, 11436 for the scout).
+#
+# Scout model history: originally Qwen3.6-35B-A3B MoE with --cpu-moe/
+# --n-cpu-moe expert offload (see git history / qwen3.6-35b-a3b-scout.yml if
+# still present). Replaced with Qwen3.5-4B (dense, MTP-capable repo but MTP
+# dropped here — see below) for better -np concurrency: a dense model avoids
+# the CPU-RAM-bandwidth contention that --n-cpu-moe's offloaded experts hit
+# under concurrent requests, and its much smaller weight footprint leaves
+# far more VRAM budget for multiple parallel slots.
 #
 # Keep both standalone files in sync with this one if either gets re-tuned —
 # this file duplicates their service blocks rather than importing them.
@@ -81,14 +89,14 @@ services:
       - --repeat-penalty
       - "1.0"
 
-  ik-llama-qwen36-35b-a3b-scout:
+  ik-llama-qwen35-4b-scout:
     image: ghcr.io/ikawrakow/ik-llama-cpp@sha256:5f914f1ccade922417af58c94bd1cbb558052c8852d86678ead3fe693eec0143
-    container_name: ik-llama-qwen36-35b-a3b-scout
+    container_name: ik-llama-qwen35-4b-scout
     restart: unless-stopped
     ports:
       - "0.0.0.0:11436:8080"
     volumes:
-      - /home/kinetic/data/llm-models/qwen3.6-35b-a3b-gguf/unsloth-ud-q4km:/models:ro
+      - /home/kinetic/data/llm-models/qwen3.5-4b-gguf/unsloth-mtp:/models:ro
     deploy:
       resources:
         reservations:
@@ -102,29 +110,23 @@ services:
       - --port
       - "8080"
       - --model
-      - /models/Qwen3.6-35B-A3B-UD-Q4_K_M.gguf
+      - /models/Qwen3.5-4B-UD-Q4_K_XL.gguf
       - -ngl
-      - "999"
-      - --n-cpu-moe
-      - "16"
+      - "99"
       - --ctx-size
-      - "65536"
+      - "921600"
+      - -np
+      - "5"
       - -b
       - "2048"
       - -ub
       - "512"
-      - -np
-      - "1"
       - -ctk
       - q4_0
       - -ctv
       - q4_0
       - -khad
       - -vhad
-      - -ngld
-      - "99"
-      - --recurrent-ckpt-mode
-      - auto
       - -fa
       - "on"
       - --jinja
@@ -144,6 +146,6 @@ services:
       - --min-p
       - "0"
       - --presence-penalty
-      - "0.2"
+      - "0"
       - --repeat-penalty
       - "1.0"
