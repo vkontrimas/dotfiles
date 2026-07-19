@@ -225,6 +225,7 @@ export default function (pi: ExtensionAPI) {
       "- Skip seqagent when the task depends on context from this conversation",
       "- Use explore/investigate before planning changes; use research for external info",
       "- Use review only for large changes: 5+ files, ~500+ LOC, or architectural shifts. Skip it for small tweaks.",
+      "- If the user asks for a review and the codebase is large (many files/modules), use review scoped to the relevant area — e.g. 'review the auth module' not 'review everything'.",
     ],
     parameters: Type.Object({
       tasks: Type.Array(TaskItem, {
