@@ -12,13 +12,6 @@
   "defaultThinkingLevel": "high",
   "theme": "dark",
   "subagents": {
-    "defaultModel": "bifrost/vllm/qwen3.5-4b-scout",
-    "overrides": {
-      "scout": {
-        "toolBudget": {
-          "hard": 4
-        }
-      }
-    }
+    "defaultModel": "bifrost/vllm/qwen3.5-4b-scout"
   }
 }
