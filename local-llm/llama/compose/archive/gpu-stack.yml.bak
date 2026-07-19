@@ -118,9 +118,9 @@ services:
       - -ngl
       - "99"
       # --ctx-size is total budget shared across all -np slots (not per-slot).
-      # 150K per slot × 4 = 600K total.
+      # 180000 per slot × 4 = 720000 total.
       - --ctx-size
-      - "614400"
+      - "720000"
       - -np
       - "4"
       - -b

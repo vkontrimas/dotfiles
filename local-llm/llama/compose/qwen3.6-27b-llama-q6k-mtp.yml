@@ -1,0 +1,109 @@
+# ===========================================================================
+# Qwen3.6-27B (unsloth/Qwen3.6-27B-MTP-GGUF, Q6_K) — MAINLINE llama.cpp,
+# dual-GPU, text-only, MTP speculative decoding, full native context.
+#
+# Replaces the archived ik_llama.cpp single-GPU config
+# (archive/qwen3.6-27b-ik-iq4ks-mtp-solo.yml.bak). Switched off ik_llama.cpp
+# because we don't need its Hadamard KV transforms (-khad/-vhad) or
+# recurrent-checkpoint tuning to hit these targets on mainline; mainline gets
+# us a bigger (Q6_K vs IQ4_KS), higher-quality quant with room to spare once
+# spread across both GPUs, and its own MTP support (--spec-type draft-mtp,
+# renamed from ik_llama's `mtp:n_max=N` syntax) is confirmed working for this
+# model family.
+#
+# NOTE: mainline llama.cpp does not support --mmproj + MTP together (per
+# unsloth's own Qwen3.6-27B-MTP-GGUF README: "-np > 1 and --mmproj are not
+# yet supported with MTP"). Vision was dropped from scope for this config —
+# text-only, MTP-enabled, is the priority.
+#
+# Architecture note: Qwen3.6-27B is a hybrid DeltaNet/full-attention model —
+# only 16 of 64 layers are real full-attention (KV-cache-bearing); the other
+# 48 are linear-attention (small fixed-size recurrent state, doesn't scale
+# with context). This is why full 262144-token context is affordable even
+# with a q8_0-quantized KV cache: ~2048 KV elements/token across the 16
+# full-attention layers, not 64.
+#
+# GPU split: device_ids ["1","0"] (GPU1 first) + explicit --tensor-split
+# skewed heavily toward GPU1 — the goal is MINIMAL GPU0 usage (headless
+# card GPU1 should carry as much as it can hold on its own; GPU0 is the
+# display/gaming card and should only take the unavoidable overflow).
+# Targets: ~600MB free on GPU1, ~10GB free on GPU0 (gaming/graphics
+# headroom). The pi-subagents scout service that used to live on GPU0 has
+# been retired (subagent experiment didn't pan out), freeing up GPU0's
+# budget for this spillover instead.
+#
+# Tensor-split ratio and --ctx-size are being ladder-tested empirically —
+# see inline comments for measured results once settled.
+# ===========================================================================
+services:
+  llama-qwen36-27b-q6k-mtp:
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+    container_name: llama-qwen36-27b-q6k-mtp
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:11434:8080"
+    volumes:
+      - /home/kinetic/data/llm-models/qwen3.6-27b-gguf/unsloth-mtp-q6k:/models:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              # GPU1 listed first so it's CUDA device 0 inside the
+              # container — tensor-split fractions below are in this order.
+              device_ids: ["1", "0"]
+              capabilities: [gpu]
+    command:
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --model
+      - /models/Qwen3.6-27B-Q6_K.gguf
+      - --no-mmap
+      - -ngl
+      - "99"
+      - -sm
+      - layer
+      # PLACEHOLDER — being ladder-tested. Skewed toward GPU1 (first entry).
+      - -ts
+      - "0.82,0.18"
+      - --ctx-size
+      - "262144"
+      - -b
+      - "2048"
+      - -ub
+      - "1024"
+      - -np
+      - "1"
+      - -ctk
+      - q8_0
+      - -ctv
+      - q8_0
+      - -fa
+      - "on"
+      - --spec-type
+      - draft-mtp
+      - --spec-draft-n-max
+      - "2"
+      - --spec-draft-p-min
+      - "0.0"
+      - --jinja
+      - --reasoning
+      - "on"
+      - --reasoning-format
+      - deepseek
+      - --chat-template-kwargs
+      - '{"enable_thinking":true,"preserve_thinking":true}'
+      - --temp
+      - "0.6"
+      - --top-p
+      - "0.95"
+      - --top-k
+      - "20"
+      - --min-p
+      - "0"
+      - --presence-penalty
+      - "0.2"
+      - --repeat-penalty
+      - "1.0"
