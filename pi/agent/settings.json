@@ -5,9 +5,13 @@
   "packages": [
     "npm:@juicesharp/rpiv-web-tools",
     "npm:@marcfargas/pi-heartbeat",
-    "npm:pi-ask-user"
+    "npm:pi-ask-user",
+    "npm:pi-subagents"
   ],
   "hideThinkingBlock": true,
   "defaultThinkingLevel": "high",
-  "theme": "dark"
+  "theme": "dark",
+  "subagents": {
+    "defaultModel": "vllm-scout/qwen3.6-35b-a3b-scout"
+  }
 }
