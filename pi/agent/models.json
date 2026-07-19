@@ -56,32 +56,11 @@
           "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
         },
         {
-          "id": "qwen3.6-27b-ik-iq4ks-mtp-solo",
-          "name": "Qwen3.6 27B ik_llama IQ4_KS+MTP, 213K ctx (single GPU, text-only)",
+          "id": "qwen3.6-27b-q6k-mtp",
+          "name": "Qwen3.6 27B mainline llama.cpp Q6_K+MTP, full 262K ctx (dual-GPU, minimal GPU0 spillover)",
           "reasoning": true,
           "input": ["text"],
-          "contextWindow": 213000,
-          "maxTokens": 32768,
-          "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
-        }
-      ]
-    },
-    "vllm-scout": {
-      "baseUrl": "http://localhost:11436/v1",
-      "api": "openai-completions",
-      "apiKey": "vllm",
-      "compat": {
-        "supportsDeveloperRole": false,
-        "supportsReasoningEffort": false,
-        "thinkingFormat": "qwen-chat-template"
-      },
-      "models": [
-        {
-          "id": "qwen3.5-4b-scout",
-          "name": "Qwen3.5 4B dense Q6_K, GPU0 scout (single server, np=4, 150K ctx, no thinking)",
-          "reasoning": true,
-          "input": ["text"],
-          "contextWindow": 153600,
+          "contextWindow": 262144,
           "maxTokens": 32768,
           "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
         }
@@ -143,20 +122,11 @@
           "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
         },
         {
-          "id": "vllm/qwen3.6-27b-ik-iq4ks-mtp-solo",
-          "name": "Qwen3.6 27B ik_llama IQ4_KS+MTP, 213K ctx, single GPU — via Bifrost gateway (:11435)",
+          "id": "vllm/qwen3.6-27b-q6k-mtp",
+          "name": "Qwen3.6 27B mainline llama.cpp Q6_K+MTP, full 262K ctx, dual-GPU — via Bifrost gateway (:11435)",
           "reasoning": true,
           "input": ["text"],
-          "contextWindow": 213000,
-          "maxTokens": 32768,
-          "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
-        },
-        {
-          "id": "vllm/qwen3.5-4b-scout",
-          "name": "Qwen3.5 4B dense Q6_K, GPU0 scout (np=4, 150K ctx) — via Bifrost gateway (:11435)",
-          "reasoning": true,
-          "input": ["text"],
-          "contextWindow": 153600,
+          "contextWindow": 262144,
           "maxTokens": 32768,
           "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
         }

@@ -1,7 +1,7 @@
 {
   "lastChangelogVersion": "0.80.10",
   "defaultProvider": "bifrost",
-  "defaultModel": "vllm/qwen3.6-27b-ik-iq4ks-mtp-solo",
+  "defaultModel": "vllm/qwen3.6-27b-q6k-mtp",
   "packages": [
     "npm:@juicesharp/rpiv-web-tools",
     "npm:@marcfargas/pi-heartbeat",

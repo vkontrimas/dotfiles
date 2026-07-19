@@ -54,23 +54,13 @@
           }
         },
         {
-          "name": "qwen36-27b-ik-iq4ks-mtp-solo-local",
+          "name": "qwen36-27b-q6k-mtp-local",
           "value": "",
-          "models": ["qwen3.6-27b-ik-iq4ks-mtp-solo"],
+          "models": ["qwen3.6-27b-q6k-mtp"],
           "weight": 1.0,
           "vllm_key_config": {
             "url": "http://host.docker.internal:11434",
-            "model_name": "qwen3.6-27b-ik-iq4ks-mtp-solo"
-          }
-        },
-        {
-          "name": "qwen35-4b-scout-local",
-          "value": "",
-          "models": ["qwen3.5-4b-scout"],
-          "weight": 1.0,
-          "vllm_key_config": {
-            "url": "http://host.docker.internal:11436",
-            "model_name": "qwen3.5-4b-scout"
+            "model_name": "qwen3.6-27b-q6k-mtp"
           }
         }
       ],

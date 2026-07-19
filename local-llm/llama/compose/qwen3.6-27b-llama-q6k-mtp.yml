@@ -19,21 +19,40 @@
 # Architecture note: Qwen3.6-27B is a hybrid DeltaNet/full-attention model —
 # only 16 of 64 layers are real full-attention (KV-cache-bearing); the other
 # 48 are linear-attention (small fixed-size recurrent state, doesn't scale
-# with context). This is why full 262144-token context is affordable even
-# with a q8_0-quantized KV cache: ~2048 KV elements/token across the 16
-# full-attention layers, not 64.
+# with context). This is why full 262144-token context is affordable at all
+# on two 24GB cards: ~2048 KV elements/token across the 16 full-attention
+# layers, not 64. Initially tried q8_0 KV (~8.4GB total at full context) —
+# OOM'd on GPU1 even skewing the split hard toward it. Dropped to q4_0
+# KV (~4.2GB total), which closed the gap and fit comfortably within both
+# margin targets below. "Decent" quant here means q4_0, not the q8_0
+# originally hoped for — full context won out over KV precision.
 #
-# GPU split: device_ids ["1","0"] (GPU1 first) + explicit --tensor-split
-# skewed heavily toward GPU1 — the goal is MINIMAL GPU0 usage (headless
-# card GPU1 should carry as much as it can hold on its own; GPU0 is the
-# display/gaming card and should only take the unavoidable overflow).
-# Targets: ~600MB free on GPU1, ~10GB free on GPU0 (gaming/graphics
-# headroom). The pi-subagents scout service that used to live on GPU0 has
-# been retired (subagent experiment didn't pan out), freeing up GPU0's
-# budget for this spillover instead.
+# GPU split: explicit --tensor-split skewed heavily toward GPU1 — the goal
+# is MINIMAL GPU0 usage (headless card GPU1 should carry as much as it can
+# hold on its own; GPU0 is the display/gaming card and should only take the
+# unavoidable overflow). The pi-subagents scout service that used to live
+# on GPU0 has been retired (subagent experiment didn't pan out), freeing up
+# GPU0's budget for this spillover instead.
 #
-# Tensor-split ratio and --ctx-size are being ladder-tested empirically —
-# see inline comments for measured results once settled.
+# GOTCHA: -ts fraction order follows the driver's native CUDA device
+# numbering (0, 1), NOT the order GPUs are listed in `device_ids:` below —
+# confirmed via `nvidia-smi -L` inside the container. First tried
+# device_ids ["1","0"] assuming that would make GPU1 CUDA-device-0; it
+# didn't. -ts "0.82,0.18" under that wrong assumption loaded GPU0 (the
+# display card) to 23.5GB/523MB-free and left GPU1 nearly idle — exactly
+# backwards. Fixed by treating -ts as [GPU0 fraction, GPU1 fraction]
+# unconditionally, regardless of device_ids list order.
+#
+# MEASURED: ladder-tested at full 262144 ctx-size, q4_0/q4_0 KV. -ts
+# "0.37,0.63" settled: GPU0 ~9.9-10.0GB free (target ~10GB), GPU1
+# ~600-960MB free (target ~600MB) — consistent across repeated boots
+# (small run-to-run variance from allocator fragmentation, always close to
+# target). KV cache is fully pre-allocated at boot (--ctx-size sizes it
+# upfront, doesn't grow with use) — confirmed via a real 230,008-token
+# prefill: VRAM readings were bit-for-bit identical throughout the ~6.4
+# minute prefill (598 tok/s) and after, no OOM risk from context growth.
+# MTP acceptance ~61-85% depending on prompt (measured on real requests,
+# not synthetic filler), draft_n_max=2, ~29-50 tok/s decode.
 # ===========================================================================
 services:
   llama-qwen36-27b-q6k-mtp:
@@ -49,9 +68,10 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              # GPU1 listed first so it's CUDA device 0 inside the
-              # container — tensor-split fractions below are in this order.
-              device_ids: ["1", "0"]
+              # List order here does NOT control -ts fraction order — see
+              # header gotcha note. -ts below is [GPU0 fraction, GPU1
+              # fraction] regardless of this list's order.
+              device_ids: ["0", "1"]
               capabilities: [gpu]
     command:
       - --host
@@ -65,9 +85,11 @@ services:
       - "99"
       - -sm
       - layer
-      # PLACEHOLDER — being ladder-tested. Skewed toward GPU1 (first entry).
+      # Settled — [GPU0 fraction, GPU1 fraction]. ~9.9-10GB free on GPU0,
+      # ~600-960MB free on GPU1 at full 262144 ctx. See header for the
+      # ladder-test history and the device-order gotcha.
       - -ts
-      - "0.82,0.18"
+      - "0.37,0.63"
       - --ctx-size
       - "262144"
       - -b
@@ -77,9 +99,9 @@ services:
       - -np
       - "1"
       - -ctk
-      - q8_0
+      - q4_0
       - -ctv
-      - q8_0
+      - q4_0
       - -fa
       - "on"
       - --spec-type
