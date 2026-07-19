@@ -18,9 +18,9 @@
 # 213000 landed on target — 551MB free at 97.5% fill (207,965 tokens),
 # extrapolating to ~500MB at a full 213000-token fill. Settled value.
 #
-# MTP n_max=3 (vs the dual-GPU sibling's n_max=2) — bumped without
-# re-benchmarking acceptance rate; club-3090's docs note acceptance drops off
-# above n_max=2 on their rig, unverified here.
+# MTP n_max=2 — was bumped to n_max=3 without re-benchmarking acceptance
+# rate, then reverted back to n_max=2 (matching the dual-GPU sibling and
+# club-3090's own finding that acceptance drops off above n_max=2).
 #
 # Same shared-toggle pattern as its siblings: binds host port 11434, only
 # one llama variant should be up at a time. No waybar/daemon wiring.
@@ -79,7 +79,7 @@ services:
       - -ngld
       - "99"
       - --spec-type
-      - mtp:n_max=3,p_min=0.0
+      - mtp:n_max=2,p_min=0.0
       - --recurrent-ckpt-mode
       - auto
       - --merge-qkv

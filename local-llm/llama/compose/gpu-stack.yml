@@ -62,7 +62,7 @@ services:
       - -ngld
       - "99"
       - --spec-type
-      - mtp:n_max=3,p_min=0.0
+      - mtp:n_max=2,p_min=0.0
       - --recurrent-ckpt-mode
       - auto
       - --merge-qkv
