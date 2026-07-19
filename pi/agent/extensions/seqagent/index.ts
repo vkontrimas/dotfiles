@@ -400,11 +400,9 @@ export default function (pi: ExtensionAPI) {
         text += `\n  ${icon(s.status, details.frame)} ${theme.fg("muted", `${i + 1}.`) + " "}${theme.fg("accent", s.agent)}`;
         const preview = s.task.length > 40 ? s.task.slice(0, 40) + "…" : s.task;
         text += theme.fg("dim", ` ${preview}`);
-        // Live stats for running agents
-        if (s.status === "running") {
-          const u = formatUsage(s.usage);
-          if (u) text += theme.fg("dim", ` ${u}`);
-        }
+        // Stats for all agents
+        const u = formatUsage(s.usage);
+        if (u) text += theme.fg("accent", ` ${u}`);
       }
       // Blank line then expand hint
       if (!expanded && running === 0) text += `\n\n${theme.fg("muted", "(Ctrl+O to expand)")}`;
