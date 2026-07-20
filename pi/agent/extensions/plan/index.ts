@@ -15,7 +15,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getLanguageFromPath, highlightCode, keyHint } from "@earendil-works/pi-coding-agent";
-import { Box, Text } from "@earendil-works/pi-tui";
+import { Box, Container, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { spawn } from "child_process";
 import { mkdirSync, writeFileSync } from "fs";
@@ -253,8 +253,21 @@ export default function (pi: ExtensionAPI): void {
 				}
 			}
 
+			// Add spacing before the tool result appears
+			if (context.isPartial) {
+				output += "\n";
+			}
+
 			text.setText(output);
 			return text;
+		},
+		renderResult(_result, _options, _theme, context) {
+			// Clear the call display after execution (matching write tool pattern)
+			const component = context.lastComponent ?? new Container();
+			if (!(component instanceof Container)) {
+				component.clear();
+			}
+			return component;
 		},
 	});
 
