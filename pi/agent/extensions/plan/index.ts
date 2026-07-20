@@ -32,8 +32,8 @@ You are in plan mode. Follow this workflow:
 2. **Write the plan**: Create a detailed plan using the format below.
 3. **Save**: Call \`save_plan\` with the complete plan content. Choose a descriptive kebab-case filename slug (e.g. \`add-utf-8-slicing\`, \`refactor-event-bus\`).
 4. **Ask for approval**: Call \`ask_user\` with the question "Want me to proceed?" and these options:
-   - \`Yes\` — proceed with the plan as written
-   - \`No\` — don't proceed
+   - \`Yes, proceed\` — proceed with the plan as written
+   - \`No, cancel\` — don't proceed
    - \`Make changes\` — allow freeform feedback to modify the plan
 
    Use \`allowFreeform: true\` so the user can type custom changes when selecting "Make changes".
@@ -258,21 +258,28 @@ export default function (pi: ExtensionAPI): void {
 				}
 			}
 
-			// Add spacing before the tool result appears
-			if (context.isPartial) {
-				output += "\n";
-			}
-
 			text.setText(output);
 			return text;
 		},
-		renderResult(_result, _options, _theme, context) {
-			// Clear the call display after execution (matching write tool pattern)
-			const component = context.lastComponent ?? new Container();
-			if (!(component instanceof Container)) {
-				component.clear();
+		renderResult(result, _options, theme, context) {
+			const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+
+			if (result.isError) {
+				const output = result.content
+					.filter((c) => c.type === "text")
+					.map((c) => c.text || "")
+					.join("\n");
+				text.setText(output ? `\n${theme.fg("error", output)}` : "");
+				return text;
 			}
-			return component;
+
+			// Render result text with leading newline for spacing from content preview
+			const resultText = result.content
+				.filter((c) => c.type === "text")
+				.map((c) => c.text || "")
+				.join("\n");
+			text.setText(`\n${resultText}`);
+			return text;
 		},
 	});
 
