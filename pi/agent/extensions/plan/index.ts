@@ -15,7 +15,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getLanguageFromPath, highlightCode, keyHint } from "@earendil-works/pi-coding-agent";
-import { Text } from "@earendil-works/pi-tui";
+import { Box, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { spawn } from "child_process";
 import { mkdirSync, writeFileSync } from "fs";
@@ -88,9 +88,23 @@ function spawnEditor(filePath: string, cwd: string): boolean {
 	}
 }
 
+// --- Banner data type ---
+
+interface PlanBannerData {
+	content: string;
+}
+
 // --- Extension ---
 
 export default function (pi: ExtensionAPI): void {
+	// Register renderer for plan banner (visible in chat, hidden from tree)
+	pi.registerEntryRenderer<PlanBannerData>("plan-banner", (entry, _options, theme) => {
+		const data = entry.data ?? { content: "" };
+		const box = new Box(1, 1, (text) => theme.bg("customMessageBg", text));
+		box.addChild(new Text(data.content, 0, 0));
+		return box;
+	});
+
 	// Register /plan command
 	pi.registerCommand("plan", {
 		description: "Start planning — research, write a plan to .pi/plans/, and open your editor",
@@ -105,15 +119,10 @@ export default function (pi: ExtensionAPI): void {
 			const MAX_DESC = 80;
 			const shortDesc = description.length > MAX_DESC ? `${description.slice(0, MAX_DESC)}…` : description;
 
-			// 1. Confirmation message (visible in chat)
-			pi.sendMessage(
-				{
-					customType: "plan-mode",
-					content: `📋 **Plan mode** — researching and planning: *${shortDesc}*\n\nPlan will be saved to \`.pi/plans/\``,
-					display: true,
-				},
-				{ triggerTurn: false },
-			);
+			// 1. Confirmation banner (visible in chat, hidden from tree, not sent to LLM)
+			pi.appendEntry<PlanBannerData>("plan-banner", {
+				content: `📋 **Plan mode** — researching and planning: *${shortDesc}*\n\nPlan will be saved to \`.pi/plans/\``,
+			});
 
 			// 2. Skill / guidance (in context, hidden from UI)
 			pi.sendMessage(
@@ -125,11 +134,12 @@ export default function (pi: ExtensionAPI): void {
 				{ triggerTurn: false },
 			);
 
-			// 3. User prompt (in context, hidden from UI) — triggers the agent turn
+			// 3. Prompt (in context, hidden from UI) — triggers the agent turn.
+			// Content is the original command so /tree rewind restores it.
 			pi.sendMessage(
 				{
 					customType: "plan-prompt",
-					content: `Create a plan for: ${description}`,
+					content: `/plan ${description}`,
 					display: false,
 				},
 				{ triggerTurn: true },
