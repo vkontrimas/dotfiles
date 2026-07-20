@@ -109,18 +109,25 @@ export default function (pi: ExtensionAPI): void {
 				{ triggerTurn: false },
 			);
 
-			// 2. Skill / guidance (visible in context)
+			// 2. Skill / guidance (in context, hidden from UI)
 			pi.sendMessage(
 				{
 					customType: "plan-instructions",
 					content: PLANNING_INSTRUCTIONS,
-					display: true,
+					display: false,
 				},
 				{ triggerTurn: false },
 			);
 
-			// 3. User prompt — triggers the agent turn
-			pi.sendUserMessage(`Create a plan for: ${description}`);
+			// 3. User prompt (in context, hidden from UI) — triggers the agent turn
+			pi.sendMessage(
+				{
+					customType: "plan-prompt",
+					content: `Create a plan for: ${description}`,
+					display: false,
+				},
+				{ triggerTurn: true },
+			);
 		},
 	});
 
