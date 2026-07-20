@@ -29,7 +29,9 @@ const state: PlanState = { mode: false, description: "" };
 
 // --- Planning instructions ---
 
-const PLANNING_INSTRUCTIONS = `You are in **plan mode**. Follow this workflow:
+const PLANNING_INSTRUCTIONS = `**Plan Mode**
+
+You are in plan mode. Follow this workflow:
 
 1. **Research**: Read relevant files, run grep/bash/find to understand the codebase.
 2. **Write the plan**: Create a detailed plan using the format below.
@@ -107,16 +109,6 @@ export default function (pi: ExtensionAPI): void {
 			state.mode = true;
 			state.description = description;
 
-			// Confirmation message (visible in chat)
-			pi.sendMessage(
-				{
-					customType: "plan-mode",
-					content: `📋 **Plan mode** — researching and planning: *${description}*\n\nPlan will be saved to \`.pi/plans/\``,
-					display: true,
-				},
-				{ triggerTurn: false },
-			);
-
 			// Send the planning prompt to the agent
 			pi.sendUserMessage(`Create a plan for: ${description}`);
 		},
@@ -173,7 +165,7 @@ export default function (pi: ExtensionAPI): void {
 			message: {
 				customType: "plan-instructions",
 				content: PLANNING_INSTRUCTIONS,
-				display: false,
+				display: true,
 			},
 		};
 	});
