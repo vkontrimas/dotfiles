@@ -14,6 +14,8 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { getLanguageFromPath, highlightCode, keyHint } from "@earendil-works/pi-coding-agent";
+import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { spawn } from "child_process";
 import { mkdirSync, writeFileSync } from "fs";
@@ -157,8 +159,49 @@ export default function (pi: ExtensionAPI): void {
 			// Write plan file
 			writeFileSync(filePath, params.content, "utf-8");
 
-			// Open external editor
-			const editorOpened = spawnEditor(filePath, ctx.cwd);
+			// Open editor inline (same window as Pi) — TUI stop/spawn/start
+			let editorOpened = false;
+
+			if (ctx.mode === "tui" && ctx.hasUI) {
+				const editorCmd = resolveEditor();
+				const [cmd, ...args] = editorCmd.split(/\s+/);
+
+				let tuiRef: { stop: () => void; start: () => void; requestRender: (full?: boolean) => void } | undefined;
+
+				await ctx.ui.custom((tui, _theme, _keybindings, done) => {
+					tuiRef = tui as { stop: () => void; start: () => void; requestRender: (full?: boolean) => void };
+
+					setImmediate(async () => {
+						try {
+							tuiRef?.stop();
+
+							const child = spawn(cmd, [...args, filePath], {
+								stdio: "inherit",
+								cwd: ctx.cwd,
+							});
+
+							await new Promise<void>((resolve) => {
+								child.on("close", () => resolve());
+								child.on("error", () => resolve());
+							});
+
+							tuiRef?.start();
+							tuiRef?.requestRender(true);
+						} catch {
+							try { tuiRef?.start(); tuiRef?.requestRender(true); } catch {}
+						} finally {
+							done();
+						}
+					});
+
+					const { Container } = require("@earendil-works/pi-tui");
+					return new Container();
+				}, { overlay: true });
+
+				editorOpened = true;
+			} else {
+				editorOpened = spawnEditor(filePath, ctx.cwd);
+			}
 
 			return {
 				content: [
@@ -166,12 +209,42 @@ export default function (pi: ExtensionAPI): void {
 						type: "text",
 						text: [
 							`✅ Plan saved to \`.pi/plans/${slug}.md\``,
-							editorOpened ? `\nOpened in external editor (\`${resolveEditor()}\`)` : `\nEditor spawn skipped — open \`.pi/plans/${slug}.md\` manually`,
+							editorOpened ? `\nOpened in editor (\`${resolveEditor()}\`)` : `\nEditor spawn skipped — open \`.pi/plans/${slug}.md\` manually`,
 						].join(""),
 					},
 				],
 				details: { path: filePath },
 			};
+		},
+		renderCall(args, theme, context) {
+			const slug = typeof args?.slug === "string" ? args.slug : "unknown";
+			const content = typeof args?.content === "string" ? args.content : null;
+			const path = `.pi/plans/${slug}.md`;
+
+			const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+
+			let output = `${theme.fg("toolTitle", theme.bold("save_plan"))} ${path}`;
+
+			if (content !== null && content) {
+				const lang = getLanguageFromPath(".md");
+				const lines = lang
+					? highlightCode(content, lang)
+					: content.split("\n");
+
+				const totalLines = lines.length;
+				const maxLines = context.expanded ? lines.length : 10;
+				const displayLines = lines.slice(0, maxLines);
+				const remaining = lines.length - maxLines;
+
+				output += `\n\n${displayLines.join("\n")}`;
+
+				if (remaining > 0) {
+					output += `${theme.fg("muted", `\n... (${remaining} more lines, ${totalLines} total,`)} ${keyHint("app.tools.expand", "to expand")}${theme.fg("muted", ")")}`;
+				}
+			}
+
+			text.setText(output);
+			return text;
 		},
 	});
 
