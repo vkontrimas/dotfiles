@@ -31,7 +31,12 @@ You are in plan mode. Follow this workflow:
 1. **Research**: Read relevant files, run grep/bash/find to understand the codebase.
 2. **Write the plan**: Create a detailed plan using the format below.
 3. **Save**: Call \`save_plan\` with the complete plan content. Choose a descriptive kebab-case filename slug (e.g. \`add-utf-8-slicing\`, \`refactor-event-bus\`).
-4. End your response with "Want me to proceed?"
+4. **Ask for approval**: Call \`ask_user\` with the question "Want me to proceed?" and these options:
+   - \`Yes\` — proceed with the plan as written
+   - \`No\` — don't proceed
+   - \`Make changes\` — allow freeform feedback to modify the plan
+
+   Use \`allowFreeform: true\` so the user can type custom changes when selecting "Make changes".
 
 ### Plan Format
 
