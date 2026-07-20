@@ -14,7 +14,7 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { getLanguageFromPath, highlightCode, keyHint } from "@earendil-works/pi-coding-agent";
+import { getLanguageFromPath, getMarkdownTheme, highlightCode, keyHint } from "@earendil-works/pi-coding-agent";
 import { Box, Container, Markdown, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { spawn } from "child_process";
@@ -106,7 +106,7 @@ export default function (pi: ExtensionAPI): void {
 	pi.registerEntryRenderer<PlanBannerData>("plan-banner", (entry, _options, theme) => {
 		const data = entry.data ?? { content: "" };
 		const box = new Box(1, 1, (text) => theme.bg("customMessageBg", text));
-		box.addChild(new Markdown(data.content, 0, 0));
+		box.addChild(new Markdown(data.content, 0, 0, getMarkdownTheme()));
 		return box;
 	});
 
