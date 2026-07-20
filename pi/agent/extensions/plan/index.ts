@@ -13,37 +13,19 @@
  * tests table, files list.
  */
 
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { spawn } from "child_process";
 import { mkdirSync, writeFileSync } from "fs";
-import { join, basename } from "path";
+import { join } from "path";
 import { platform } from "os";
 
 interface PlanState {
 	mode: boolean;
 	description: string;
-	slug: string;
 }
 
-const state: PlanState = { mode: false, description: "", slug: "" };
-
-// --- Slugify helper ---
-
-function slugify(text: string): string {
-	return (
-		text
-			.toLowerCase()
-			// Replace spaces and common separators with hyphens
-			.replace(/[\s/_]+/g, "-")
-			// Strip non-alphanumeric except hyphens
-			.replace(/[^a-z0-9-]/g, "")
-			// Collapse multiple hyphens
-			.replace(/-+/g, "-")
-			// Trim leading/trailing hyphens
-			.replace(/^-+|-+$/g, "")
-	);
-}
+const state: PlanState = { mode: false, description: "" };
 
 // --- Planning instructions ---
 
@@ -51,7 +33,7 @@ const PLANNING_INSTRUCTIONS = `You are in **plan mode**. Follow this workflow:
 
 1. **Research**: Read relevant files, run grep/bash/find to understand the codebase.
 2. **Write the plan**: Create a detailed plan using the format below.
-3. **Save**: Call \`save_plan\` with the complete plan content.
+3. **Save**: Call \`save_plan\` with the complete plan content. Choose a descriptive kebab-case filename slug (e.g. \`add-utf-8-slicing\`, \`refactor-event-bus\`).
 4. End your response with "Want me to proceed?"
 
 ### Plan Format
@@ -122,16 +104,14 @@ export default function (pi: ExtensionAPI): void {
 				return;
 			}
 
-			const slug = slugify(description);
 			state.mode = true;
 			state.description = description;
-			state.slug = slug;
 
 			// Confirmation message (visible in chat)
 			pi.sendMessage(
 				{
 					customType: "plan-mode",
-					content: `📋 **Plan mode** — researching and planning: *${description}*\n\nPlan will be saved to \`.pi/plans/${slug}.md\``,
+					content: `📋 **Plan mode** — researching and planning: *${description}*\n\nPlan will be saved to \`.pi/plans/\``,
 					display: true,
 				},
 				{ triggerTurn: false },
@@ -150,11 +130,11 @@ export default function (pi: ExtensionAPI): void {
 			"Save the plan to .pi/plans/<slug>.md and open it in the external editor. " +
 			"Call this with the complete plan content once planning is done.",
 		parameters: Type.Object({
-			slug: Type.Optional(Type.String({ description: "Filename slug (without .md extension)" })),
+			slug: Type.String({ description: "Filename slug (without .md extension). Choose a descriptive, kebab-case name like 'add-utf-8-slicing'." }),
 			content: Type.String({ description: "Full markdown content of the plan" }),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-			const slug = params.slug ?? state.slug ?? `plan-${Date.now()}`;
+			const slug = params.slug ?? `plan-${Date.now()}`;
 			const planDir = join(ctx.cwd, ".pi", "plans");
 			const filePath = join(planDir, `${slug}.md`);
 
