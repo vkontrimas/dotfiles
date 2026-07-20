@@ -99,11 +99,15 @@ export default function (pi: ExtensionAPI): void {
 				return;
 			}
 
+			// Truncate long descriptions for the confirmation banner
+			const MAX_DESC = 80;
+			const shortDesc = description.length > MAX_DESC ? `${description.slice(0, MAX_DESC)}…` : description;
+
 			// 1. Confirmation message (visible in chat)
 			pi.sendMessage(
 				{
 					customType: "plan-mode",
-					content: `📋 **Plan mode** — researching and planning: *${description}*\n\nPlan will be saved to \`.pi/plans/\``,
+					content: `📋 **Plan mode** — researching and planning: *${shortDesc}*\n\nPlan will be saved to \`.pi/plans/\``,
 					display: true,
 				},
 				{ triggerTurn: false },
