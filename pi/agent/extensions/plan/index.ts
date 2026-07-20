@@ -20,13 +20,6 @@ import { mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { platform } from "os";
 
-interface PlanState {
-	mode: boolean;
-	description: string;
-}
-
-const state: PlanState = { mode: false, description: "" };
-
 // --- Planning instructions ---
 
 const PLANNING_INSTRUCTIONS = `**Plan Mode**
@@ -106,10 +99,27 @@ export default function (pi: ExtensionAPI): void {
 				return;
 			}
 
-			state.mode = true;
-			state.description = description;
+			// 1. Confirmation message (visible in chat)
+			pi.sendMessage(
+				{
+					customType: "plan-mode",
+					content: `📋 **Plan mode** — researching and planning: *${description}*\n\nPlan will be saved to \`.pi/plans/\``,
+					display: true,
+				},
+				{ triggerTurn: false },
+			);
 
-			// Send the planning prompt to the agent
+			// 2. Skill / guidance (visible in context)
+			pi.sendMessage(
+				{
+					customType: "plan-instructions",
+					content: PLANNING_INSTRUCTIONS,
+					display: true,
+				},
+				{ triggerTurn: false },
+			);
+
+			// 3. User prompt — triggers the agent turn
 			pi.sendUserMessage(`Create a plan for: ${description}`);
 		},
 	});
@@ -154,19 +164,4 @@ export default function (pi: ExtensionAPI): void {
 		},
 	});
 
-	// Inject planning instructions when plan mode is active
-	pi.on("before_agent_start", async (event) => {
-		if (!state.mode) return;
-
-		// Reset immediately so this fires only once per /plan invocation
-		state.mode = false;
-
-		return {
-			message: {
-				customType: "plan-instructions",
-				content: PLANNING_INSTRUCTIONS,
-				display: true,
-			},
-		};
-	});
 }
