@@ -57,9 +57,9 @@
         },
         {
           "id": "qwen3.6-27b-q5km-mtp",
-          "name": "Qwen3.6 27B mainline llama.cpp Q5_K_M+MTP, full 262K ctx (dual-GPU, minimal GPU0 spillover)",
+          "name": "Qwen3.6 27B mainline llama.cpp Q5_K_M+MTP+vision, full 262K ctx (dual-GPU, minimal GPU0 spillover)",
           "reasoning": true,
-          "input": ["text"],
+          "input": ["text", "image"],
           "contextWindow": 262144,
           "maxTokens": 32768,
           "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
@@ -123,9 +123,9 @@
         },
         {
           "id": "vllm/qwen3.6-27b-q5km-mtp",
-          "name": "Qwen3.6 27B mainline llama.cpp Q5_K_M+MTP, full 262K ctx, dual-GPU — via Bifrost gateway (:11435)",
+          "name": "Qwen3.6 27B mainline llama.cpp Q5_K_M+MTP+vision, full 262K ctx, dual-GPU — via Bifrost gateway (:11435)",
           "reasoning": true,
-          "input": ["text"],
+          "input": ["text", "image"],
           "contextWindow": 262144,
           "maxTokens": 32768,
           "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }

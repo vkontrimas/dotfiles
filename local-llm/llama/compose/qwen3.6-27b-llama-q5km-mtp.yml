@@ -1,6 +1,6 @@
 # ===========================================================================
 # Qwen3.6-27B (unsloth/Qwen3.6-27B-MTP-GGUF, Q5_K_M) — MAINLINE llama.cpp,
-# dual-GPU, text-only, MTP speculative decoding, full native context.
+# dual-GPU, MTP speculative decoding + vision, full native context.
 #
 # Replaces the archived ik_llama.cpp single-GPU config
 # (archive/qwen3.6-27b-ik-iq4ks-mtp-solo.yml.bak). Switched off ik_llama.cpp
@@ -9,10 +9,21 @@
 # MTP support (--spec-type draft-mtp, renamed from ik_llama's `mtp:n_max=N`
 # syntax) is confirmed working for this model family.
 #
-# NOTE: mainline llama.cpp does not support --mmproj + MTP together (per
-# unsloth's own Qwen3.6-27B-MTP-GGUF README: "-np > 1 and --mmproj are not
-# yet supported with MTP"). Vision was dropped from scope for this config —
-# text-only, MTP-enabled, is the priority.
+# UPDATE (2026-07-21): re-enabled --mmproj. The "--mmproj + MTP not
+# supported" warning in unsloth's own Qwen3.6-27B-MTP-GGUF README was
+# accurate when this config was first written but is now stale — the
+# underlying crash was llama.cpp issue #22867 (MTP's ubatch hook choking on
+# the non-consecutive token positions image embeddings produce), fixed
+# upstream in am17an/llama.cpp#5 and confirmed still fixed on current main
+# (closed unmerged follow-up ggml-org/llama.cpp#23286, author couldn't
+# reproduce on Qwen3.6-27B-MTP). Verified locally on this rig's image
+# (server-cuda, b10066/86a9c79f8, pulled 2026-07-18): loaded --mmproj +
+# --spec-type draft-mtp together with no crash/assert, and a real
+# image-included chat request came back with MTP actively drafting
+# (draft_n_accepted 36/37). Reuses the mmproj-F16.gguf already downloaded
+# for the Q4_K_M config — it's architecture-specific, not quant-specific,
+# so it's portable across any Qwen3.6-27B GGUF (same reasoning as the now-
+# retired ik_llama.cpp vision sibling config).
 #
 # Weight quant vs KV quant tradeoff (revisited after first landing on Q6_K
 # weights + q4_0 KV): weight quantization error is static and averages out
@@ -77,6 +88,10 @@ services:
       - "0.0.0.0:11434:8080"
     volumes:
       - /home/kinetic/data/llm-models/qwen3.6-27b-gguf/unsloth-mtp-q5km:/models:ro
+      # Mounted outside /models (not nested under it) — /models is a
+      # read-only bind mount, and Docker can't create a mountpoint node for
+      # a second file-level bind mount inside an already-read-only parent.
+      - /home/kinetic/data/llm-models/qwen3.6-27b-gguf/unsloth-mtp-q4km/mmproj-F16.gguf:/mmproj/mmproj-F16.gguf:ro
     deploy:
       resources:
         reservations:
@@ -94,15 +109,19 @@ services:
       - "8080"
       - --model
       - /models/Qwen3.6-27B-Q5_K_M.gguf
+      - --mmproj
+      - /mmproj/mmproj-F16.gguf
       - --no-mmap
       - -ngl
       - "99"
       - -sm
       - layer
-      # Settled — [GPU0 fraction, GPU1 fraction]. ~10.5-10.6GB free on
-      # GPU0, ~480-530MB free on GPU1 at full 262144 ctx. See header for
-      # the ladder-test history and the device-order/layer-boundary
-      # gotchas.
+      # Settled — [GPU0 fraction, GPU1 fraction]. Originally ladder-tested
+      # text-only at ~10.5-10.6GB free on GPU0, ~480-530MB free on GPU1 (see
+      # header for that history and the device-order/layer-boundary
+      # gotchas). Unchanged after adding --mmproj (2026-07-21): booted clean
+      # at the same split with ~9.4GB free on GPU0, ~885MB free on GPU1 at
+      # full 262144 ctx — margin held, no re-ladder needed.
       - -ts
       - "0.34,0.66"
       - --ctx-size
