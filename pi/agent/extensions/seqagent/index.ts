@@ -111,11 +111,14 @@ interface RunOptions {
   cwd: string;
   signal?: AbortSignal;
   onUpdate?: (result: StepResult) => void;
+  currentModel?: string;  // provider/id of the parent session's model, e.g. "anthropic/claude-sonnet-4-5"
 }
 
-async function runAgent({ agent, task, cwd, signal, onUpdate }: RunOptions): Promise<StepResult> {
+async function runAgent({ agent, task, cwd, signal, onUpdate, currentModel }: RunOptions): Promise<StepResult> {
   const args: string[] = ["--mode", "json", "-p", "--no-session", "--exclude-tools", "seqagent"];
-  if (agent.model) args.push("--model", agent.model);
+  // Use agent's hardcoded model if set, otherwise use the parent session's currently selected model
+  const model = agent.model ?? currentModel;
+  if (model) args.push("--model", model);
 
   let tmpFile: string | undefined;
   let tmpDir: string | undefined;
@@ -293,9 +296,12 @@ export default function (pi: ExtensionAPI) {
         md.steps[i].status = "running";
         emit();
 
+        // Pass the parent session's currently selected model as fallback
+        const currentModel = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
         const result = await runAgent({
           agent, task: t.task, cwd, signal,
           onUpdate: () => emit(),
+          currentModel,
         }).catch((err) => {
           md.steps[i].status = "error";
           emit();
