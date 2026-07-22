@@ -33,82 +33,121 @@ config.automatically_reload_config = true
 -- Disable terminal bell
 config.audible_bell = "Disabled"
 
+-- Leader key (tmux-style prefix): Ctrl+Space
+config.leader = { key = "Space", mods = "CTRL", timeout_milliseconds = 1000 }
+
 -- Keybindings
 config.keys = {
-  -- Split vertically (left-right)
+  -- Splits: leader d = left/right, leader shift+d = top/bottom
   {
     key = "d",
-    mods = "CTRL|ALT",
+    mods = "LEADER",
     action = wezterm.action.SplitHorizontal({ domain = "CurrentPaneDomain" }),
   },
-  -- Split horizontally (top-bottom)
   {
-    key = "d",
-    mods = "CTRL|SHIFT|ALT",
+    key = "D",
+    mods = "LEADER|SHIFT",
     action = wezterm.action.SplitVertical({ domain = "CurrentPaneDomain" }),
   },
-  -- Tabs
+
+  -- Pane navigation via leader (vim keys)
   {
-    key = 't',
-    mods = 'CTRL|ALT',
-    action = wezterm.action.SpawnTab 'CurrentPaneDomain',
-  },
-  {
-    key = 'w',
-    mods = 'CTRL|ALT',
-    action = wezterm.action.CloseCurrentTab { confirm = false },
-  },
-  {
-    key = 'Tab',
-    mods = 'CTRL|ALT',
-    action = wezterm.action.ActivateTabRelative(1),
-  },
-  {
-    key = 'Tab',
-    mods = 'CTRL|SHIFT|ALT',
-    action = wezterm.action.ActivateTabRelative(-1),
-  },
-  -- Navigate panes
-  {
-    key = "LeftArrow",
-    mods = "CTRL|ALT",
+    key = "h",
+    mods = "LEADER",
     action = wezterm.action.ActivatePaneDirection("Left"),
   },
   {
-    key = "RightArrow",
-    mods = "CTRL|ALT",
-    action = wezterm.action.ActivatePaneDirection("Right"),
+    key = "j",
+    mods = "LEADER",
+    action = wezterm.action.ActivatePaneDirection("Down"),
   },
   {
-    key = "UpArrow",
-    mods = "CTRL|ALT",
+    key = "k",
+    mods = "LEADER",
     action = wezterm.action.ActivatePaneDirection("Up"),
   },
   {
-    key = "DownArrow",
-    mods = "CTRL|ALT",
+    key = "l",
+    mods = "LEADER",
+    action = wezterm.action.ActivatePaneDirection("Right"),
+  },
+
+  -- Fast pane navigation (no leader): Alt + vim keys
+  {
+    key = "h",
+    mods = "ALT",
+    action = wezterm.action.ActivatePaneDirection("Left"),
+  },
+  {
+    key = "j",
+    mods = "ALT",
     action = wezterm.action.ActivatePaneDirection("Down"),
   },
-  -- Resize panes
   {
-    key = "LeftArrow",
-    mods = "CTRL|SHIFT|ALT",
+    key = "k",
+    mods = "ALT",
+    action = wezterm.action.ActivatePaneDirection("Up"),
+  },
+  {
+    key = "l",
+    mods = "ALT",
+    action = wezterm.action.ActivatePaneDirection("Right"),
+  },
+
+  -- Resize panes (leader + shift + vim keys)
+  {
+    key = "H",
+    mods = "LEADER|SHIFT",
     action = wezterm.action.AdjustPaneSize({ "Left", 5 }),
   },
   {
-    key = "RightArrow",
-    mods = "CTRL|SHIFT|ALT",
-    action = wezterm.action.AdjustPaneSize({ "Right", 5 }),
+    key = "J",
+    mods = "LEADER|SHIFT",
+    action = wezterm.action.AdjustPaneSize({ "Down", 5 }),
   },
   {
-    key = "UpArrow",
-    mods = "CTRL|SHIFT|ALT",
+    key = "K",
+    mods = "LEADER|SHIFT",
     action = wezterm.action.AdjustPaneSize({ "Up", 5 }),
   },
   {
-    key = "DownArrow",
-    mods = "CTRL|SHIFT|ALT",
-    action = wezterm.action.AdjustPaneSize({ "Down", 5 }),
+    key = "L",
+    mods = "LEADER|SHIFT",
+    action = wezterm.action.AdjustPaneSize({ "Right", 5 }),
+  },
+
+  -- Pane management
+  {
+    key = "x",
+    mods = "LEADER",
+    action = wezterm.action.CloseCurrentPane({ confirm = false }),
+  },
+  {
+    key = "z",
+    mods = "LEADER",
+    action = wezterm.action.TogglePaneZoomState,
+  },
+
+  -- Tabs
+  {
+    key = "t",
+    mods = "LEADER",
+    action = wezterm.action.SpawnTab("CurrentPaneDomain"),
+  },
+  {
+    key = "n",
+    mods = "LEADER",
+    action = wezterm.action.ActivateTabRelative(1),
+  },
+  {
+    key = "p",
+    mods = "LEADER",
+    action = wezterm.action.ActivateTabRelative(-1),
+  },
+  {
+    key = "w",
+    mods = "LEADER",
+    action = wezterm.action.CloseCurrentTab({ confirm = false }),
   },
 
   -- Claude Code shift enter hack
@@ -118,6 +157,15 @@ config.keys = {
     action = wezterm.action({ SendString = "\x1b\r" }),
   },
 }
+
+-- Jump to tab N: leader + 1..9
+for i = 1, 9 do
+  table.insert(config.keys, {
+    key = tostring(i),
+    mods = "LEADER",
+    action = wezterm.action.ActivateTab(i - 1),
+  })
+end
 
 -- Ayu Dark color scheme
 config.colors = {
