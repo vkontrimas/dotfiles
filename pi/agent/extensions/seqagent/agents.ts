@@ -8,6 +8,7 @@ export interface AgentConfig {
   name: string;
   description: string;
   model?: string;
+  tools?: string[];
   systemPrompt: string;
 }
 
@@ -33,12 +34,20 @@ export function discoverAgents(): AgentConfig[] {
     if (!entry.name.endsWith(".md") || (!entry.isFile() && !entry.isSymbolicLink())) continue;
     const content = fs.readFileSync(path.join(AGENTS_DIR, entry.name), "utf-8");
     const { frontmatter, body } = parseFrontmatter(content);
-    if (!frontmatter.name || !frontmatter.description) continue;
+    if (!frontmatter.name || !frontmatter.description) {
+      console.warn(`[seqagent] Skipping "${entry.name}": missing required "name" or "description" frontmatter`);
+      continue;
+    }
+
+    const tools = frontmatter.tools
+      ? frontmatter.tools.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean)
+      : undefined;
 
     agents.push({
       name: frontmatter.name,
       description: frontmatter.description,
       model: frontmatter.model,
+      tools,
       systemPrompt: body,
     });
   }

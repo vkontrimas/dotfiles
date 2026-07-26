@@ -115,7 +115,16 @@ interface RunOptions {
 }
 
 async function runAgent({ agent, task, cwd, signal, onUpdate, currentModel }: RunOptions): Promise<StepResult> {
-  const args: string[] = ["--mode", "json", "-p", "--no-session", "--exclude-tools", "seqagent"];
+  const args: string[] = ["--mode", "json", "-p", "--no-session"];
+  if (agent.tools && agent.tools.length) {
+    // Allowlist mode already excludes anything not listed (including seqagent), but
+    // strip it explicitly as a safeguard against a future agent .md accidentally
+    // including it and causing recursive spawning.
+    const restricted = agent.tools.filter((t) => t !== "seqagent");
+    args.push("--tools", restricted.join(","));
+  } else {
+    args.push("--exclude-tools", "seqagent");
+  }
   // Use agent's hardcoded model if set, otherwise use the parent session's currently selected model
   const model = agent.model ?? currentModel;
   if (model) args.push("--model", model);

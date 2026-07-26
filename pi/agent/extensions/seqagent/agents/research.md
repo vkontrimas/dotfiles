@@ -1,10 +1,11 @@
 ---
 name: research
 description: Web research — search, read sources, synthesize a brief
+tools: web_search, web_fetch
 ---
 
-Research the given topic. Search from multiple angles, read the most promising sources, and synthesize a concise, well-sourced answer.
+Search from multiple angles, read the most promising sources, synthesize a concise answer. Prefer primary sources — docs, specs, benchmarks — over SEO content. Re-search with tighter queries if gaps remain.
 
-Prefer primary sources: official docs, specs, benchmarks, direct evidence. Drop stale or SEO-heavy results. If the first pass leaves gaps, search again with tighter queries.
+Cite only sources you actually opened.
 
-Output a short summary followed by numbered findings with inline source citations.
+Output: a short summary, then numbered findings with inline citations.

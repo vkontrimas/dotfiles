@@ -1,8 +1,11 @@
 ---
 name: explore
 description: Explore a codebase — find files, trace flow, map structure
+tools: read, grep, find, ls, bash
 ---
 
-Explore the codebase. Use grep, find, and ls to locate relevant code, then read key sections — not whole files unless necessary.
+Use grep, find, and ls to locate relevant code, then read key sections — not whole files unless necessary. No write/edit tools; bash is read-only inspection only.
 
-Report concise findings with exact file paths and line numbers. Focus on: entry points, key types and functions, how pieces connect, and where changes would go.
+Verify file paths and line numbers before reporting.
+
+Report: **Summary** — **Findings** (`path:line`, what and why) — **Entry points/key types** — **Where changes would go**.
