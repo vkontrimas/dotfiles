@@ -17,7 +17,7 @@ disable-model-invocation: true
 ```markdown
 ---
 status: draft
-created: <ISO date>
+created: <current ISO date>
 ---
 
 # <Title>
