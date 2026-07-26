@@ -36,7 +36,8 @@ export default function (pi: ExtensionAPI): void {
 		promptSnippet: "Track objectives for long-running tasks",
 		promptGuidelines: [
 			"Use update_objectives to set and maintain a to-do list on any task that will span many turns. Pass the full, current list each call — it replaces the previous one.",
-			"Call update_objectives again to tick items off as they're completed, or to add/change items as the task evolves. Don't stop the task before every objective is done.",
+			"Call update_objectives immediately after finishing each objective, marking it done, before moving on to the next one — don't batch updates until the end.",
+			"Call update_objectives to add or change items as the task evolves. Don't stop the task before every objective is done.",
 		],
 		parameters: Type.Object({
 			objectives: Type.Array(
@@ -62,12 +63,11 @@ export default function (pi: ExtensionAPI): void {
 				details: { objectives },
 			};
 		},
-		renderCall(args, theme, context) {
+		renderCall(_args, _theme, context) {
+			// Everything is shown in renderResult instead — an empty Text renders
+			// as zero lines, so no separate (and redundant) call row appears.
 			const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
-			const count = Array.isArray((args as { objectives?: unknown[] })?.objectives)
-				? (args as { objectives: unknown[] }).objectives.length
-				: 0;
-			text.setText(`${theme.fg("toolTitle", theme.bold("update_objectives"))} ${theme.fg("dim", `(${count} objectives)`)}`);
+			text.setText("");
 			return text;
 		},
 		renderResult(result, _options, theme, context) {
@@ -78,7 +78,7 @@ export default function (pi: ExtensionAPI): void {
 					.filter((c) => c.type === "text")
 					.map((c) => c.text || "")
 					.join("\n");
-				text.setText(output ? `\n${theme.fg("error", output)}` : "");
+				text.setText(output ? theme.fg("error", output) : "");
 				return text;
 			}
 
