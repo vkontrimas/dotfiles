@@ -11,8 +11,12 @@
  *   5. Agent can keep editing the file directly and call present_plan again to re-show it —
  *      no need to round-trip the whole plan content through a tool call each time
  *
- * Plan format follows a generic structure: Problem, Solution, numbered areas,
- * tests table, files list.
+ * The actual instructions live in `pi/agent/skills/planning.md` — a skill with
+ * `disable-model-invocation: true` so it never surfaces in the model's own
+ * `<available_skills>` listing (this flow assumes /plan's scaffolding — the
+ * confirmation banner, the plan-prompt message — is already driving it; letting
+ * the model self-invoke it outside that scaffolding would be half-wired). It's
+ * read once at module load and injected verbatim, frontmatter stripped.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -24,52 +28,15 @@ import { readFileSync } from "fs";
 import { join } from "path";
 import { platform } from "os";
 
-// --- Planning instructions ---
+// --- Planning instructions (loaded from the planning skill) ---
 
-const PLANNING_INSTRUCTIONS = `**Plan Mode**
+function stripFrontmatter(content: string): string {
+	const m = content.match(/^---\s*\n[\s\S]*?\n---\s*\n([\s\S]*)$/);
+	return (m ? m[1] : content).trim();
+}
 
-You are in plan mode. Follow this workflow:
-
-1. **Research**: Read relevant files, run grep/bash/find to understand the codebase.
-2. **Write the plan**: Using your normal write tool, create the plan at \`.pi/plans/<slug>.md\` following the format below. Choose a descriptive kebab-case slug (e.g. \`add-utf-8-slicing\`, \`refactor-event-bus\`).
-3. **Present**: Call \`present_plan\` with the slug to open it in the editor and show it in chat. If you need to revise it — including after user feedback — edit the file directly with your normal edit tool and call \`present_plan\` again; don't resend the whole plan through a tool call.
-4. **Ask for approval**: Call \`ask_user\` with the question "Want me to proceed?" and these options:
-   - \`Yes, proceed\` — proceed with the plan as written
-   - \`No, cancel\` — don't proceed
-   - \`Make changes\` — allow freeform feedback to modify the plan
-
-   Use \`allowFreeform: true\` so the user can type custom changes when selecting "Make changes".
-5. **Track execution**: Once approved, call \`update_objectives\` with the plan's numbered areas as your objective list. As you complete each one, call \`update_objectives\` again with it ticked off. This keeps you on track over a long execution and survives you losing your place.
-
-### Plan Format
-
-\`\`\`markdown
-# <Title>
-
-**Problem**: 1-2 sentences on what's broken or what's needed.
-
-**Solution**: 1-2 sentences on the approach.
-
----
-
-#### 1. Area: description
-
-Numbered steps or bullet points. Be specific about struct changes, new functions, enum values, etc.
-
-#### 2. Area: description
-
-...
-
-#### N. Tests
-
-| Test | Description |
-
-#### N+1. Files
-
-- \`path/to/file\` — one-line summary of changes
-\`\`\`
-
-Be thorough. Specificity beats brevity.`;
+const SKILL_PATH = join(__dirname, "..", "..", "skills", "planning.md");
+const PLANNING_INSTRUCTIONS = stripFrontmatter(readFileSync(SKILL_PATH, "utf-8"));
 
 // --- Editor resolution ---
 
