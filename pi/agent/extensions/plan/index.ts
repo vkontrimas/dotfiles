@@ -6,8 +6,10 @@
  * Flow:
  *   1. User types `/plan <description>`
  *   2. Extension injects planning instructions into the next agent turn
- *   3. Agent researches, writes a plan, and calls save_plan
- *   4. save_plan writes to <cwd>/.pi/plans/<slug>.md and opens the external editor
+ *   3. Agent researches, writes the plan to <cwd>/.pi/plans/<slug>.md with its normal write/edit tools
+ *   4. Agent calls present_plan, which opens the file in the external editor and shows it in chat
+ *   5. Agent can keep editing the file directly and call present_plan again to re-show it —
+ *      no need to round-trip the whole plan content through a tool call each time
  *
  * Plan format follows a generic structure: Problem, Solution, numbered areas,
  * tests table, files list.
@@ -18,7 +20,7 @@ import { getLanguageFromPath, getMarkdownTheme, highlightCode, keyHint } from "@
 import { Box, Container, Markdown, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { spawn } from "child_process";
-import { mkdirSync, writeFileSync } from "fs";
+import { readFileSync } from "fs";
 import { join } from "path";
 import { platform } from "os";
 
@@ -29,14 +31,15 @@ const PLANNING_INSTRUCTIONS = `**Plan Mode**
 You are in plan mode. Follow this workflow:
 
 1. **Research**: Read relevant files, run grep/bash/find to understand the codebase.
-2. **Write the plan**: Create a detailed plan using the format below.
-3. **Save**: Call \`save_plan\` with the complete plan content. Choose a descriptive kebab-case filename slug (e.g. \`add-utf-8-slicing\`, \`refactor-event-bus\`).
+2. **Write the plan**: Using your normal write tool, create the plan at \`.pi/plans/<slug>.md\` following the format below. Choose a descriptive kebab-case slug (e.g. \`add-utf-8-slicing\`, \`refactor-event-bus\`).
+3. **Present**: Call \`present_plan\` with the slug to open it in the editor and show it in chat. If you need to revise it — including after user feedback — edit the file directly with your normal edit tool and call \`present_plan\` again; don't resend the whole plan through a tool call.
 4. **Ask for approval**: Call \`ask_user\` with the question "Want me to proceed?" and these options:
    - \`Yes, proceed\` — proceed with the plan as written
    - \`No, cancel\` — don't proceed
    - \`Make changes\` — allow freeform feedback to modify the plan
 
    Use \`allowFreeform: true\` so the user can type custom changes when selecting "Make changes".
+5. **Track execution**: Once approved, call \`update_objectives\` with the plan's numbered areas as your objective list. As you complete each one, call \`update_objectives\` again with it ticked off. This keeps you on track over a long execution and survives you losing your place.
 
 ### Plan Format
 
@@ -152,27 +155,36 @@ export default function (pi: ExtensionAPI): void {
 		},
 	});
 
-	// Register save_plan tool
+	// Register present_plan tool
 	pi.registerTool({
-		name: "save_plan",
-		label: "Save Plan",
+		name: "present_plan",
+		label: "Present Plan",
 		description:
-			"Save the plan to .pi/plans/<slug>.md and open it in the external editor. " +
-			"Call this with the complete plan content once planning is done.",
+			"Present a plan you've already written to .pi/plans/<slug>.md with your normal write/edit tools. " +
+			"Opens it in the external editor and shows it in chat. Call this again after editing the file " +
+			"directly to re-present a revised version — you don't need to pass the plan content through this tool.",
 		parameters: Type.Object({
-			slug: Type.String({ description: "Filename slug (without .md extension). Choose a descriptive, kebab-case name like 'add-utf-8-slicing'." }),
-			content: Type.String({ description: "Full markdown content of the plan" }),
+			slug: Type.String({ description: "Filename slug (without .md extension) of the plan file you wrote, e.g. 'add-utf-8-slicing'." }),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-			const slug = params.slug ?? `plan-${Date.now()}`;
+			const slug = params.slug;
 			const planDir = join(ctx.cwd, ".pi", "plans");
 			const filePath = join(planDir, `${slug}.md`);
 
-			// Ensure directory exists
-			mkdirSync(planDir, { recursive: true });
-
-			// Write plan file
-			writeFileSync(filePath, params.content, "utf-8");
+			let content: string;
+			try {
+				content = readFileSync(filePath, "utf-8");
+			} catch {
+				return {
+					isError: true,
+					content: [
+						{
+							type: "text" as const,
+							text: `Could not read ${filePath}. Write the plan there with your normal write tool first, then call present_plan.`,
+						},
+					],
+				};
+			}
 
 			// Open editor inline (same window as Pi) — TUI stop/spawn/start
 			let editorOpened = false;
@@ -223,28 +235,44 @@ export default function (pi: ExtensionAPI): void {
 					{
 						type: "text",
 						text: [
-							`✅ Plan saved to \`.pi/plans/${slug}.md\``,
+							`📋 Presenting \`.pi/plans/${slug}.md\``,
 							editorOpened ? `\nOpened in editor (\`${resolveEditor()}\`)` : `\nEditor spawn skipped — open \`.pi/plans/${slug}.md\` manually`,
 						].join(""),
 					},
 				],
-				details: { path: filePath },
+				details: { path: filePath, content },
 			};
 		},
 		renderCall(args, theme, context) {
 			const slug = typeof args?.slug === "string" ? args.slug : "unknown";
-			const content = typeof args?.content === "string" ? args.content : null;
 			const path = `.pi/plans/${slug}.md`;
 
 			const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+			text.setText(`${theme.fg("toolTitle", theme.bold("present_plan"))} ${path}`);
+			return text;
+		},
+		renderResult(result, _options, theme, context) {
+			const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
 
-			let output = `${theme.fg("toolTitle", theme.bold("save_plan"))} ${path}`;
+			const resultText = result.content
+				.filter((c) => c.type === "text")
+				.map((c) => c.text || "")
+				.join("\n");
 
-			if (content !== null && content) {
+			if (result.isError) {
+				text.setText(resultText ? `\n${theme.fg("error", resultText)}` : "");
+				return text;
+			}
+
+			const content = typeof (result.details as { content?: unknown } | undefined)?.content === "string"
+				? (result.details as { content: string }).content
+				: null;
+
+			let output = `\n${resultText}`;
+
+			if (content) {
 				const lang = getLanguageFromPath(".md");
-				const lines = lang
-					? highlightCode(content, lang)
-					: content.split("\n");
+				const lines = lang ? highlightCode(content, lang) : content.split("\n");
 
 				const totalLines = lines.length;
 				const maxLines = context.expanded ? lines.length : 10;
@@ -259,26 +287,6 @@ export default function (pi: ExtensionAPI): void {
 			}
 
 			text.setText(output);
-			return text;
-		},
-		renderResult(result, _options, theme, context) {
-			const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
-
-			if (result.isError) {
-				const output = result.content
-					.filter((c) => c.type === "text")
-					.map((c) => c.text || "")
-					.join("\n");
-				text.setText(output ? `\n${theme.fg("error", output)}` : "");
-				return text;
-			}
-
-			// Render result text with leading newline for spacing from content preview
-			const resultText = result.content
-				.filter((c) => c.type === "text")
-				.map((c) => c.text || "")
-				.join("\n");
-			text.setText(`\n${resultText}`);
 			return text;
 		},
 	});
