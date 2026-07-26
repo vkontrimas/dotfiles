@@ -15,4 +15,4 @@ Confirm the root cause before touching code — a fix that isn't traced to a cau
 6. **Verify**: Re-run the reproduction from step 1, plus a regression check (existing tests, or exercise the surrounding behavior).
 7. **Report**: Root cause, fix (file:line), what you ran to verify.
 
-Single bug, well-scoped: no need for `add_objectives`. Reach for it only across several bugs or a fix large enough to lose track of.
+Single bug, well-scoped: no need for `add_tasks`. Reach for it only across several bugs or a fix large enough to lose track of.
