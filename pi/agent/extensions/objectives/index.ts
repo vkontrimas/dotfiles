@@ -5,9 +5,13 @@
  * long-running tasks, and periodically re-injects that list as a
  * <system-reminder> so the model doesn't lose track or stop early.
  *
- * The reminder is injected via the `context` event, so it's only visible
- * to the model on the next LLM call — it's never written to the session
- * log or shown in the UI.
+ * The periodic reminder is injected via the `context` event, so it's only
+ * visible to the model on the next LLM call — it's never written to the
+ * session log or shown in the UI.
+ *
+ * If the agent stops (goes idle) while objectives remain, an `agent_end`
+ * handler pushes a real follow-up message telling it to keep going, up to
+ * a few attempts before giving up and notifying the user.
  */
 
 import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
@@ -22,6 +26,28 @@ interface Objective {
 
 interface ObjectivesBannerData {
 	content: string;
+}
+
+interface Stats {
+	updateCalls: number;
+	objectivesCreated: number;
+	objectivesDeleted: number;
+	remindersSent: number;
+	autoContinues: number;
+	stallGiveUps: number;
+	turnGapsSinceLastUpdate: number[];
+}
+
+function newStats(): Stats {
+	return {
+		updateCalls: 0,
+		objectivesCreated: 0,
+		objectivesDeleted: 0,
+		remindersSent: 0,
+		autoContinues: 0,
+		stallGiveUps: 0,
+		turnGapsSinceLastUpdate: [],
+	};
 }
 
 function renderObjectivesBlock(theme: Theme, objectives: Objective[]): string {
@@ -40,12 +66,25 @@ function renderObjectivesBlock(theme: Theme, objectives: Objective[]): string {
 	return output;
 }
 
+function renderObjectivesChecklist(objectives: Objective[]): string {
+	return objectives.map((o) => `- [${o.done ? "x" : " "}] ${o.text}`).join("\n");
+}
+
 // How many turns to let pass between reminders.
 const REMINDER_EVERY_N_TURNS = 5;
+
+// Give up auto-continuing after this many stops in a row with zero progress,
+// so a genuinely stuck model doesn't spin forever without the user noticing.
+const MAX_STALLED_CONTINUES = 3;
 
 export default function (pi: ExtensionAPI): void {
 	let objectives: Objective[] = [];
 	let turnsSinceReminder = 0;
+	let lastContinueSignature: string | null = null;
+	let stalledContinues = 0;
+	let totalTurns = 0;
+	let lastUpdateTurn: number | null = null;
+	const stats = newStats();
 
 	// Renderer for the /objectives banner (visible in chat, hidden from tree, never sent to the LLM)
 	pi.registerEntryRenderer<ObjectivesBannerData>("objectives-banner", (entry, _options, theme) => {
@@ -74,6 +113,33 @@ export default function (pi: ExtensionAPI): void {
 		},
 	});
 
+	// /objectives-stats — show tracking statistics without touching the session/context
+	pi.registerCommand("objectives-stats", {
+		description: "Show objectives tracking statistics without sending anything to the model",
+		handler: async () => {
+			const gaps = stats.turnGapsSinceLastUpdate;
+			const avgGap = gaps.length ? (gaps.reduce((a, b) => a + b, 0) / gaps.length).toFixed(1) : "n/a";
+			const minGap = gaps.length ? Math.min(...gaps) : "n/a";
+			const maxGap = gaps.length ? Math.max(...gaps) : "n/a";
+
+			const remaining = objectives.filter((o) => !o.done).length;
+			const done = objectives.length - remaining;
+
+			const lines = [
+				"**Objectives Stats**",
+				"",
+				`- Current list: ${objectives.length} objectives (${done} done, ${remaining} remaining)`,
+				`- update_objectives calls: ${stats.updateCalls}`,
+				`- Objectives created: ${stats.objectivesCreated}, deleted: ${stats.objectivesDeleted}`,
+				`- Turns between updates — avg: ${avgGap}, min: ${minGap}, max: ${maxGap} (n=${gaps.length})`,
+				`- System reminders injected mid-task: ${stats.remindersSent}`,
+				`- Auto-continues on stop: ${stats.autoContinues} resumed, ${stats.stallGiveUps} gave up (stalled)`,
+			];
+
+			pi.appendEntry<ObjectivesBannerData>("objectives-banner", { content: lines.join("\n") });
+		},
+	});
+
 	pi.registerTool({
 		name: "update_objectives",
 		label: "Update Objectives",
@@ -97,6 +163,16 @@ export default function (pi: ExtensionAPI): void {
 			),
 		}),
 		async execute(_toolCallId, params) {
+			const prevTexts = new Set(objectives.map((o) => o.text));
+			const nextTexts = new Set(params.objectives.map((o) => o.text));
+			stats.objectivesCreated += [...nextTexts].filter((t) => !prevTexts.has(t)).length;
+			stats.objectivesDeleted += [...prevTexts].filter((t) => !nextTexts.has(t)).length;
+			stats.updateCalls++;
+			if (lastUpdateTurn !== null) {
+				stats.turnGapsSinceLastUpdate.push(totalTurns - lastUpdateTurn);
+			}
+			lastUpdateTurn = totalTurns;
+
 			objectives = params.objectives;
 			turnsSinceReminder = 0;
 
@@ -154,6 +230,7 @@ export default function (pi: ExtensionAPI): void {
 
 	pi.on("turn_start", async () => {
 		turnsSinceReminder++;
+		totalTurns++;
 	});
 
 	pi.on("context", async (event) => {
@@ -161,9 +238,10 @@ export default function (pi: ExtensionAPI): void {
 		if (turnsSinceReminder < REMINDER_EVERY_N_TURNS) return;
 
 		turnsSinceReminder = 0;
+		stats.remindersSent++;
 
 		const remaining = objectives.filter((o) => !o.done).length;
-		const list = objectives.map((o) => `- [${o.done ? "x" : " "}] ${o.text}`).join("\n");
+		const list = renderObjectivesChecklist(objectives);
 
 		const reminder = {
 			role: "user" as const,
@@ -183,5 +261,47 @@ export default function (pi: ExtensionAPI): void {
 		};
 
 		return { messages: [...event.messages, reminder] };
+	});
+
+	// The agent stopped and is about to go idle — if objectives remain, push it
+	// to keep going instead of waiting for the user. Bails out after a few
+	// stalled attempts in a row (no change in objectives state) so a genuinely
+	// stuck or blocked model doesn't spin forever unattended.
+	pi.on("agent_end", async (_event, ctx) => {
+		const remaining = objectives.filter((o) => !o.done).length;
+		if (remaining === 0) {
+			stalledContinues = 0;
+			lastContinueSignature = null;
+			return;
+		}
+
+		const signature = JSON.stringify(objectives);
+		if (signature === lastContinueSignature) {
+			stalledContinues++;
+		} else {
+			stalledContinues = 0;
+		}
+		lastContinueSignature = signature;
+
+		if (stalledContinues >= MAX_STALLED_CONTINUES) {
+			stats.stallGiveUps++;
+			ctx.ui.notify(
+				`update_objectives: stopped auto-continuing — ${remaining} objective(s) still pending with no progress in the last ${MAX_STALLED_CONTINUES} attempts.`,
+				"warning",
+			);
+			return;
+		}
+
+		stats.autoContinues++;
+		turnsSinceReminder = 0;
+		const list = renderObjectivesChecklist(objectives);
+
+		pi.sendUserMessage(
+			`<system-reminder>\n` +
+				`You stopped, but ${remaining} objective${remaining === 1 ? "" : "s"} ${remaining === 1 ? "is" : "are"} still not done:\n${list}\n\n` +
+				`Continue working autonomously — call \`update_objectives\` as you make progress, and only stop once every item is done or you're genuinely blocked.\n` +
+				`</system-reminder>`,
+			{ deliverAs: "followUp" },
+		);
 	});
 }
