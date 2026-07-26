@@ -15,9 +15,10 @@ export default function (pi: ExtensionAPI) {
       month: "long",
       day: "numeric",
     });
+    const iso = now.toISOString().slice(0, 10);
 
     return {
-      systemPrompt: `${event.systemPrompt}\n\nCurrent date: ${date}`,
+      systemPrompt: `${event.systemPrompt}\n\nCurrent date: ${date} (${iso})`,
     };
   });
 }
