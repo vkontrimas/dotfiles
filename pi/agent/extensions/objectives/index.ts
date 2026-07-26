@@ -12,9 +12,18 @@
  * If the agent stops (goes idle) while objectives remain, an `agent_end`
  * handler pushes a real follow-up message telling it to keep going, up to
  * a few attempts before giving up and notifying the user.
+ *
+ * The objectives list itself lives in the `update_objectives` tool result's
+ * `details` field, which is already part of the persisted session — so on
+ * `/reload`, `/resume`, or `/tree` navigation, it's reconstructed by scanning
+ * the current branch for the most recent update_objectives result instead of
+ * being lost with the rest of the extension's in-memory state. Turn-based
+ * counters (turnsSinceReminder, stalls, etc.) reset on reload since turn
+ * numbering itself restarts — they're session-lifetime telemetry, not
+ * functional state.
  */
 
-import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import { Box, Markdown, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
@@ -26,6 +35,11 @@ interface Objective {
 
 interface ObjectivesBannerData {
 	content: string;
+}
+
+interface ObjectivesContinueDetails {
+	remaining: number;
+	objectives: Objective[];
 }
 
 interface Stats {
@@ -86,11 +100,70 @@ export default function (pi: ExtensionAPI): void {
 	let lastUpdateTurn: number | null = null;
 	const stats = newStats();
 
+	// Rebuild `objectives` (and the counters derivable from it) by replaying
+	// every past update_objectives result on the current branch, in order.
+	// Runs on session_start (covers /reload, /resume, and fresh sessions) and
+	// session_tree (covers manual /tree navigation onto a different branch).
+	const reconstructObjectives = (ctx: ExtensionContext) => {
+		objectives = [];
+		stats.updateCalls = 0;
+		stats.objectivesCreated = 0;
+		stats.objectivesDeleted = 0;
+
+		let prevTexts = new Set<string>();
+		for (const entry of ctx.sessionManager.getBranch()) {
+			if (entry.type !== "message") continue;
+			const msg = entry.message;
+			if (msg.role !== "toolResult" || msg.toolName !== "update_objectives") continue;
+
+			const details = msg.details as { objectives?: Objective[] } | undefined;
+			if (!details?.objectives) continue;
+
+			const nextTexts = new Set(details.objectives.map((o) => o.text));
+			stats.objectivesCreated += [...nextTexts].filter((t) => !prevTexts.has(t)).length;
+			stats.objectivesDeleted += [...prevTexts].filter((t) => !nextTexts.has(t)).length;
+			stats.updateCalls++;
+			prevTexts = nextTexts;
+
+			objectives = details.objectives;
+		}
+
+		// Turn numbering restarts on reload/resume, so a stale turn-gap baseline
+		// would just produce a misleadingly huge first gap — drop it instead.
+		turnsSinceReminder = 0;
+		totalTurns = 0;
+		lastUpdateTurn = null;
+		stalledContinues = 0;
+		lastContinueSignature = null;
+	};
+
+	pi.on("session_start", async (_event, ctx) => reconstructObjectives(ctx));
+	pi.on("session_tree", async (_event, ctx) => reconstructObjectives(ctx));
+
 	// Renderer for the /objectives banner (visible in chat, hidden from tree, never sent to the LLM)
 	pi.registerEntryRenderer<ObjectivesBannerData>("objectives-banner", (entry, _options, theme) => {
 		const data = entry.data ?? { content: "" };
 		const box = new Box(1, 1, (text) => theme.bg("customMessageBg", text));
 		box.addChild(new Markdown(data.content, 0, 0, getMarkdownTheme()));
+		return box;
+	});
+
+	// Renderer for the agent_end auto-continue message — shows a plain summary
+	// instead of the raw <system-reminder> XML the model actually receives.
+	pi.registerMessageRenderer("objectives-continue", (message, _options, theme) => {
+		const details = message.details as ObjectivesContinueDetails | undefined;
+		const remaining = details?.remaining ?? 0;
+		const list = details?.objectives ?? [];
+
+		let text = theme.fg("accent", `↻ Continuing — ${remaining} objective${remaining === 1 ? "" : "s"} remaining`);
+
+		if (list.length > 0) {
+			const lines = list.map((o) => `${o.done ? theme.fg("success", "✓") : theme.fg("muted", "✗")} ${o.text}`);
+			text += `\n\n${lines.join("\n")}`;
+		}
+
+		const box = new Box(1, 1, (t) => theme.bg("customMessageBg", t));
+		box.addChild(new Text(text, 0, 0));
 		return box;
 	});
 
@@ -296,12 +369,18 @@ export default function (pi: ExtensionAPI): void {
 		turnsSinceReminder = 0;
 		const list = renderObjectivesChecklist(objectives);
 
-		pi.sendUserMessage(
-			`<system-reminder>\n` +
-				`You stopped, but ${remaining} objective${remaining === 1 ? "" : "s"} ${remaining === 1 ? "is" : "are"} still not done:\n${list}\n\n` +
-				`Continue working autonomously — call \`update_objectives\` as you make progress, and only stop once every item is done or you're genuinely blocked.\n` +
-				`</system-reminder>`,
-			{ deliverAs: "followUp" },
+		pi.sendMessage(
+			{
+				customType: "objectives-continue",
+				content:
+					`<system-reminder>\n` +
+					`You stopped, but ${remaining} objective${remaining === 1 ? "" : "s"} ${remaining === 1 ? "is" : "are"} still not done:\n${list}\n\n` +
+					`Continue working autonomously — call \`update_objectives\` as you make progress, and only stop once every item is done.\n` +
+					`</system-reminder>`,
+				display: true,
+				details: { remaining, objectives } as ObjectivesContinueDetails,
+			},
+			{ deliverAs: "followUp", triggerTurn: true },
 		);
 	});
 }
