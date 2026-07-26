@@ -57,8 +57,8 @@
  * `details` fields, which are already part of the persisted session — so on
  * `/reload`, `/resume`, or `/tree` navigation, it's reconstructed by replaying
  * those results on the current branch instead of being lost with the rest of
- * the extension's in-memory state. IDs are sequential integers assigned by the
- * tool (never the model), so replay just needs the running count of tasks
+ * the extension's in-memory state. IDs are `task_N`, sequentially assigned by
+ * the tool (never the model), so replay just needs the running count of tasks
  * added since the last clear. Turn-based counters (turnsSinceReminder, stalls,
  * etc.) reset on reload since turn numbering itself restarts — they're
  * session-lifetime telemetry, not functional state.
@@ -157,7 +157,7 @@ function renderTaskChecklistForModel(tasks: Task[]): string {
 				: t.evidence
 					? ` — evidence: ${t.evidence}`
 					: "";
-			return `- [${box}] #${t.id} ${t.text}${suffix}`;
+			return `- [${box}] ${t.id} ${t.text}${suffix}`;
 		})
 		.join("\n");
 }
@@ -417,7 +417,7 @@ export default function (pi: ExtensionAPI): void {
 		}),
 		async execute(_toolCallId, params) {
 			const added: Task[] = params.tasks.map((t) => ({
-				id: String(nextId++),
+				id: `task_${nextId++}`,
 				text: t.text,
 				reason: t.reason,
 				evidence: t.evidence,
@@ -437,7 +437,7 @@ export default function (pi: ExtensionAPI): void {
 						type: "text" as const,
 						text:
 							`Added ${added.length} task${added.length === 1 ? "" : "s"}: ` +
-							`${added.map((t) => `#${t.id} ${t.text}`).join(", ")}. ` +
+							`${added.map((t) => `${t.id} ${t.text}`).join(", ")}. ` +
 							`(${tasks.length - remaining}/${tasks.length} done, ${remaining} remaining)`,
 					},
 				],
@@ -521,11 +521,11 @@ export default function (pi: ExtensionAPI): void {
 		async execute(_toolCallId, params) {
 			const idx = tasks.findIndex((t) => t.id === params.id);
 			if (idx === -1) {
-				const ids = tasks.map((t) => `#${t.id}`).join(", ") || "(none)";
+				const ids = tasks.map((t) => t.id).join(", ") || "(none)";
 				throw new Error(`No task with id "${params.id}". Current ids: ${ids}`);
 			}
 			if (tasks[idx].done) {
-				throw new Error(`Task #${params.id} ("${tasks[idx].text}") is already marked done.`);
+				throw new Error(`Task ${params.id} ("${tasks[idx].text}") is already marked done.`);
 			}
 
 			const prevTasks = tasks;
@@ -542,7 +542,7 @@ export default function (pi: ExtensionAPI): void {
 					{
 						type: "text" as const,
 						text:
-							`Completed #${updated.id} — ${updated.text}. ` +
+							`Completed ${updated.id} — ${updated.text}. ` +
 							`(${tasks.length - remaining}/${tasks.length} done, ${remaining} remaining)`,
 					},
 				],
@@ -617,7 +617,7 @@ export default function (pi: ExtensionAPI): void {
 		async execute(_toolCallId, params) {
 			blockedReason = params.reason;
 			blockedIds = params.ids;
-			const idList = params.ids.map((id) => `#${id}`).join(", ") || "(none)";
+			const idList = params.ids.map((id) => id).join(", ") || "(none)";
 			return {
 				content: [{ type: "text" as const, text: `Stopped: ${params.reason} (blocked on: ${idList})` }],
 				details: { reason: params.reason, ids: params.ids },
@@ -635,7 +635,7 @@ export default function (pi: ExtensionAPI): void {
 			const names = (details?.ids ?? [])
 				.map((id) => {
 					const t = tasks.find((task) => task.id === id);
-					return t ? t.text : `#${id}`;
+					return t ? t.text : id;
 				})
 				.join(", ");
 			let output = theme.fg("error", `⛔ ${reason}`);
@@ -687,7 +687,7 @@ export default function (pi: ExtensionAPI): void {
 	pi.on("agent_end", async (_event, ctx) => {
 		if (blockedReason) {
 			stats.blockedStops++;
-			const names = blockedIds.map((id) => tasks.find((t) => t.id === id)?.text ?? `#${id}`).join(", ");
+			const names = blockedIds.map((id) => tasks.find((t) => t.id === id)?.text ?? id).join(", ");
 			ctx.ui.notify(`tasks_blocked: ${blockedReason}${names ? ` (blocked on: ${names})` : ""}`, "error");
 			blockedReason = null;
 			blockedIds = [];
