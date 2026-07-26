@@ -12,7 +12,7 @@ Confirm the root cause before touching code — a fix that isn't traced to a cau
 3. **Hypothesize and test**: Form a theory, confirm it against the code that actually executes (read it, log it, or repro it) before trusting it. Unfamiliar or large codebase? Delegate to `seqagent` agent `investigate`.
 4. **Confirm root cause**: State it with evidence. Unconfirmed? Back to step 3.
 5. **Fix**: The minimal change for the confirmed cause — no refactor, no defensive catch-all.
-6. **Verify**: Re-run the reproduction from step 1, plus a regression check (existing tests, or exercise the surrounding behavior).
+6. **Verify**: Add a regression test that encodes the reproduction from step 1 and run it plus the existing suite, or exercise the surrounding behavior manually if no test framework fits.
 7. **Report**: Root cause, fix (file:line), what you ran to verify.
 
 Single bug, well-scoped: no need for `add_tasks`. Reach for it only across several bugs or a fix large enough to lose track of.
