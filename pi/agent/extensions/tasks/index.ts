@@ -36,7 +36,10 @@
  * `reason` is deliberately never shown in the chat UI (tool call/result
  * rendering, the /tasks banner) — it's not a status update for the user, it's
  * a commitment the model made to itself. Completion `evidence`, by contrast,
- * IS shown in the chat UI — it's what a human would want to spot-check.
+ * IS shown in the chat UI — it's what a human would want to spot-check. It's
+ * scoped to verification only (the tool description and guidelines say so
+ * explicitly) — a changelog of what was edited belongs in the model's reply,
+ * not in this field.
  *
  * The periodic reminder is injected via the `context` event, so it's only
  * visible to the model on the next LLM call — it's never written to the
@@ -499,23 +502,19 @@ export default function (pi: ExtensionAPI): void {
 	pi.registerTool({
 		name: "complete_task",
 		label: "Complete Task",
-		description:
-			"Mark a tracked task as done. Requires evidence — the command you ran and its output, the test " +
-			"that passed, the file you read back to confirm the change landed.",
+		description: "Mark a tracked task done, with evidence of what you observed proving it.",
 		promptSnippet: "Mark a tracked task done with evidence",
 		promptGuidelines: [
-			"Finish each task by verifying it: run its `evidence` check as the last step of that task, then call complete_task straight away, before starting the next one.",
-			"Don't save completions for the end of the job. Marking several tasks done in one batch means the evidence was recalled rather than observed — and if you can't complete a task until much later work lands, its criterion was written wrong.",
-			"`evidence` must cite what you actually saw: the command and its output, the test that passed, the file you read back. Do not complete a task because you believe it's probably done or ran out of things to try — that's rationalizing, not verifying.",
-			"If a task's check fails, don't complete it — fix the issue. If the task turns out to be impossible or no longer applies, call tasks_blocked; don't complete it with an explanation of why you skipped it.",
+			"Run the task's evidence check as its last step, then call complete_task immediately — before starting the next task. Don't batch completions at the end; if a task can't be completed until later work lands, its criterion was written wrong.",
+			"`evidence` = what you actually saw: the command and its output, the test that passed, the file you read back — not what you believe, and not a changelog of what you changed (that belongs in your reply to the user, not here). Believing a task is probably done is rationalizing, not verifying.",
+			"Failing check: fix the issue, don't complete it. Impossible or no-longer-applicable task: call tasks_blocked instead of completing it with an excuse.",
 		],
 		parameters: Type.Object({
 			id: Type.String({ description: "ID of the task to complete, as returned by add_tasks" }),
 			evidence: Type.String({
 				description:
-					"What you actually observed that proves this task is done — the command you ran and its output, " +
-					"the test that passed, the file you read back. Shown to the user, so write it so a human could " +
-					"spot-check your claim.",
+					"What you observed proving this is done (command + output, passing test, file read back) — " +
+					"not a changelog of changes made. Shown to the user for spot-checking.",
 			}),
 		}),
 		async execute(_toolCallId, params) {
