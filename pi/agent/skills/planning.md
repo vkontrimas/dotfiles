@@ -7,10 +7,10 @@ disable-model-invocation: true
 **Plan Mode**
 
 1. **Research**: Read, grep, bash, find — read-only. No edits during research.
-2. **Write the plan**: Write it to `.pi/plans/<slug>.md` (kebab-case slug) in the format below, with `status: draft`.
+2. **Write the plan**: Write it to `.pi/plans/<slug>.md` (kebab-case slug) in the format below, with `status: draft`. Struct/function/field level, not full code. Final draft only — strip any "actually"/"wait"/dead ends before presenting.
 3. **Present**: Call `present_plan` with the slug.
 4. **Approve**: Call `ask_user` — "Want me to proceed?" with options `Yes, proceed` (set `status: approved`), `No, cancel` (set `status: cancelled`), `Make changes` (freeform). On "Make changes": edit the file, re-call `present_plan`, then repeat this step — don't stop without re-confirming.
-5. **Track execution**: Set `status: in-progress`. Call `add_tasks` with the plan's numbered Areas (not Files) as tasks — `reason` is why that Area is needed, `evidence` is its **Verify** line. Work one Area at a time: make the changes, write and run that Area's tests as its last step, then call `complete_task` (id + evidence) with the output you just saw — before starting the next Area. Call `tasks_blocked` on a genuine structural blocker — missing credentials, a human-only decision, contradictory requirements, an irreversible action — not for uncertainty. Set `status: done` once all tasks are complete.
+5. **Track execution**: Set `status: in-progress`. Call `add_tasks` with the plan's numbered Tasks (not Files) — `reason` is why the task is needed, `evidence` is its Verify row. One task at a time: make the changes, run its Verify row, then `complete_task` (id + evidence) before starting the next. Call `tasks_blocked` on a genuine structural blocker (missing credentials, a human-only decision, contradictory requirements, an irreversible action) — not for uncertainty. Set `status: done` once all tasks are complete.
 
 ### Plan Format
 
@@ -28,17 +28,19 @@ created: <current ISO date>
 
 ---
 
-#### 1. Area: description
+#### 1. Task: description
 
-Numbered steps or bullet points. Be specific about struct changes, new functions, enum values, etc.
+Bullet points at struct/function/field level — what changes and why, not the code itself.
 
 | Test | Description |
 |------|-------------|
 | `path/to/test` | what it pins down |
 
-**Verify**: the command that proves this Area alone works, and what its output should be.
+| Verify | Expected |
+|--------|----------|
+| command that proves this task alone works | what it should show |
 
-#### 2. Area: description
+#### 2. Task: description
 
 ...
 
@@ -47,13 +49,10 @@ Numbered steps or bullet points. Be specific about struct changes, new functions
 - `path/to/file` — one-line summary of changes
 ```
 
-Be thorough. Specificity beats brevity.
+Specificity means naming the exact struct/function/field touched, not
+pasting the implementation.
 
-Every Area carries its own tests and its own **Verify** command — there is no
-trailing "Tests" section. An Area whose only verification is the full suite at
-the end cannot be checked off when it's finished, so its evidence ends up
-reconstructed from memory hours later. If an Area has no way to prove itself in
-isolation, it's the wrong shape: split it, or fold it into the Area that can.
-
-A whole-suite run is still worth doing once at the end, but it belongs in the
-last Area, not as every Area's proof.
+Every task carries its own Test and Verify tables — no trailing "Tests"
+section. A task that can't be verified alone is the wrong shape: split it, or
+fold it into one that can. A whole-suite run still belongs once, in the last
+task's Verify table.
