@@ -11,12 +11,17 @@
  */
 
 import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
-import { Text } from "@earendil-works/pi-tui";
+import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
+import { Box, Markdown, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 
 interface Objective {
 	text: string;
 	done: boolean;
+}
+
+interface ObjectivesBannerData {
+	content: string;
 }
 
 function renderObjectivesBlock(theme: Theme, objectives: Objective[]): string {
@@ -41,6 +46,33 @@ const REMINDER_EVERY_N_TURNS = 5;
 export default function (pi: ExtensionAPI): void {
 	let objectives: Objective[] = [];
 	let turnsSinceReminder = 0;
+
+	// Renderer for the /objectives banner (visible in chat, hidden from tree, never sent to the LLM)
+	pi.registerEntryRenderer<ObjectivesBannerData>("objectives-banner", (entry, _options, theme) => {
+		const data = entry.data ?? { content: "" };
+		const box = new Box(1, 1, (text) => theme.bg("customMessageBg", text));
+		box.addChild(new Markdown(data.content, 0, 0, getMarkdownTheme()));
+		return box;
+	});
+
+	// /objectives — show the current list without touching the session/context
+	pi.registerCommand("objectives", {
+		description: "Show the current objectives list without sending anything to the model",
+		handler: async (_args, ctx) => {
+			if (objectives.length === 0) {
+				ctx.ui.notify("No objectives tracked yet.", "info");
+				return;
+			}
+
+			const remaining = objectives.filter((o) => !o.done).length;
+			const done = objectives.length - remaining;
+			const lines = objectives.map((o) => `- ${o.done ? "✓" : "✗"} ${o.text}`).join("\n");
+
+			pi.appendEntry<ObjectivesBannerData>("objectives-banner", {
+				content: `**Objectives** (${done}/${objectives.length} done, ${remaining} remaining)\n\n${lines}`,
+			});
+		},
+	});
 
 	pi.registerTool({
 		name: "update_objectives",
