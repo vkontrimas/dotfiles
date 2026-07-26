@@ -10,13 +10,29 @@
  * log or shown in the UI.
  */
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 
 interface Objective {
 	text: string;
 	done: boolean;
+}
+
+function renderObjectivesBlock(theme: Theme, objectives: Objective[]): string {
+	const remaining = objectives.filter((o) => !o.done).length;
+	const done = objectives.length - remaining;
+
+	let output = `${theme.fg("toolTitle", theme.bold("update_objectives"))} ${theme.fg("accent", `(${done}/${objectives.length} done, ${remaining} remaining)`)}`;
+
+	if (objectives.length > 0) {
+		const lines = objectives.map(
+			(o) => `${o.done ? theme.fg("success", "✓") : theme.fg("muted", "✗")} ${o.text}`,
+		);
+		output += `\n\n${lines.join("\n")}`;
+	}
+
+	return output;
 }
 
 // How many turns to let pass between reminders.
@@ -63,11 +79,27 @@ export default function (pi: ExtensionAPI): void {
 				details: { objectives },
 			};
 		},
-		renderCall(_args, _theme, context) {
-			// Everything is shown in renderResult instead — an empty Text renders
-			// as zero lines, so no separate (and redundant) call row appears.
+		renderCall(args, theme, context) {
 			const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
-			text.setText("");
+
+			// Once a final result exists, context.isPartial flips to false for both
+			// slots — let renderResult own the display and go blank here instead
+			// of showing a stale, duplicate copy of the same block.
+			if (!context.isPartial) {
+				text.setText("");
+				return text;
+			}
+
+			const rawObjectives = Array.isArray((args as { objectives?: unknown[] } | undefined)?.objectives)
+				? (args as { objectives: unknown[] }).objectives
+				: [];
+			// Args may still be mid-stream — tolerate partially-parsed entries.
+			const objectives: Objective[] = rawObjectives.map((o) => ({
+				text: typeof (o as { text?: unknown })?.text === "string" ? (o as { text: string }).text : "",
+				done: (o as { done?: unknown })?.done === true,
+			}));
+
+			text.setText(renderObjectivesBlock(theme, objectives));
 			return text;
 		},
 		renderResult(result, _options, theme, context) {
@@ -83,19 +115,7 @@ export default function (pi: ExtensionAPI): void {
 			}
 
 			const objectives = (result.details as { objectives?: Objective[] } | undefined)?.objectives ?? [];
-			const remaining = objectives.filter((o) => !o.done).length;
-			const done = objectives.length - remaining;
-
-			let output = `${theme.fg("toolTitle", theme.bold("update_objectives"))} ${theme.fg("accent", `(${done}/${objectives.length} done, ${remaining} remaining)`)}`;
-
-			if (objectives.length > 0) {
-				const lines = objectives.map(
-					(o) => `${o.done ? theme.fg("success", "✓") : theme.fg("muted", "✗")} ${o.text}`,
-				);
-				output += `\n\n${lines.join("\n")}`;
-			}
-
-			text.setText(output);
+			text.setText(renderObjectivesBlock(theme, objectives));
 			return text;
 		},
 	});
