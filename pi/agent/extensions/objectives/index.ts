@@ -159,6 +159,12 @@ export default function (pi: ExtensionAPI): void {
 
 		let prevTexts = new Set<string>();
 		for (const entry of ctx.sessionManager.getBranch()) {
+			if (entry.type === "custom" && entry.customType === "objectives-cleared") {
+				objectives = [];
+				prevTexts = new Set();
+				continue;
+			}
+
 			if (entry.type !== "message") continue;
 			const msg = entry.message;
 			if (msg.role !== "toolResult" || msg.toolName !== "update_objectives") continue;
@@ -230,6 +236,30 @@ export default function (pi: ExtensionAPI): void {
 			pi.appendEntry<ObjectivesBannerData>("objectives-banner", {
 				content: `**Objectives** (${done}/${objectives.length} done, ${remaining} remaining)\n\n${lines}`,
 			});
+		},
+	});
+
+	// /objectives-clear — drop the current list without touching the session/context
+	pi.registerCommand("objectives-clear", {
+		description: "Clear the current objectives list without sending anything to the model",
+		handler: async (_args, ctx) => {
+			if (objectives.length === 0) {
+				ctx.ui.notify("No objectives to clear.", "info");
+				return;
+			}
+
+			objectives = [];
+			turnsSinceReminder = 0;
+			lastUpdateTurn = null;
+			stalledContinues = 0;
+			lastContinueSignature = null;
+
+			// Persist the clear so it survives /reload, /resume, and /tree —
+			// otherwise reconstructObjectives would just replay the old list
+			// back from the last update_objectives result.
+			pi.appendEntry("objectives-cleared", {});
+
+			ctx.ui.notify("Objectives cleared.", "info");
 		},
 	});
 
