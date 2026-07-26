@@ -11,7 +11,14 @@
  *
  * If the agent stops (goes idle) while objectives remain, an `agent_end`
  * handler pushes a real follow-up message telling it to keep going, up to
- * a few attempts before giving up and notifying the user.
+ * a few attempts before giving up and notifying the user. That message also
+ * mentions a second, deliberately hidden tool — `objectives_blocked` — with
+ * specific examples of what counts as a genuine structural blocker (missing
+ * credentials, contradictory requirements, decisions only a human can make,
+ * irreversible actions needing authorization). It has no promptSnippet or
+ * promptGuidelines, so it never appears in the "Available tools"/Guidelines
+ * sections — the model only learns about it from that narrow framing, so
+ * it isn't reached for as a casual "should I continue?" escape hatch.
  *
  * The objectives list itself lives in the `update_objectives` tool result's
  * `details` field, which is already part of the persisted session — so on
@@ -49,6 +56,7 @@ interface Stats {
 	remindersSent: number;
 	autoContinues: number;
 	stallGiveUps: number;
+	blockedStops: number;
 	turnGapsSinceLastUpdate: number[];
 }
 
@@ -60,6 +68,7 @@ function newStats(): Stats {
 		remindersSent: 0,
 		autoContinues: 0,
 		stallGiveUps: 0,
+		blockedStops: 0,
 		turnGapsSinceLastUpdate: [],
 	};
 }
@@ -98,6 +107,7 @@ export default function (pi: ExtensionAPI): void {
 	let stalledContinues = 0;
 	let totalTurns = 0;
 	let lastUpdateTurn: number | null = null;
+	let blockedReason: string | null = null;
 	const stats = newStats();
 
 	// Rebuild `objectives` (and the counters derivable from it) by replaying
@@ -206,7 +216,7 @@ export default function (pi: ExtensionAPI): void {
 				`- Objectives created: ${stats.objectivesCreated}, deleted: ${stats.objectivesDeleted}`,
 				`- Turns between updates — avg: ${avgGap}, min: ${minGap}, max: ${maxGap} (n=${gaps.length})`,
 				`- System reminders injected mid-task: ${stats.remindersSent}`,
-				`- Auto-continues on stop: ${stats.autoContinues} resumed, ${stats.stallGiveUps} gave up (stalled)`,
+				`- Auto-continues on stop: ${stats.autoContinues} resumed, ${stats.stallGiveUps} gave up (stalled), ${stats.blockedStops} stopped (blocked)`,
 			];
 
 			pi.appendEntry<ObjectivesBannerData>("objectives-banner", { content: lines.join("\n") });
@@ -301,6 +311,41 @@ export default function (pi: ExtensionAPI): void {
 		},
 	});
 
+	// Deliberately has no promptSnippet/promptGuidelines, so it's absent from
+	// the "Available tools" and "Guidelines" sections — the model only learns
+	// about it from the specific, narrow framing in the agent_end continue
+	// prompt below, so it isn't reached for casually.
+	pi.registerTool({
+		name: "objectives_blocked",
+		label: "Objectives Blocked",
+		description:
+			"Stop the objectives auto-continue loop because it is structurally impossible to proceed — " +
+			"not because you are uncertain or want to check in. Provide a specific, concrete reason.",
+		parameters: Type.Object({
+			reason: Type.String({
+				description: "The specific structural or unresolvable blocker preventing further progress",
+			}),
+		}),
+		async execute(_toolCallId, params) {
+			blockedReason = params.reason;
+			return {
+				content: [{ type: "text" as const, text: `Stopped: ${params.reason}` }],
+				details: { reason: params.reason },
+			};
+		},
+		renderCall(_args, theme, context) {
+			const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+			text.setText(theme.fg("error", theme.bold("objectives_blocked")));
+			return text;
+		},
+		renderResult(result, _options, theme, context) {
+			const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+			const reason = (result.details as { reason?: string } | undefined)?.reason ?? "";
+			text.setText(theme.fg("error", `⛔ ${reason}`));
+			return text;
+		},
+	});
+
 	pi.on("turn_start", async () => {
 		turnsSinceReminder++;
 		totalTurns++;
@@ -325,9 +370,7 @@ export default function (pi: ExtensionAPI): void {
 					text:
 						`<system-reminder>\n` +
 						`Objectives (${remaining} remaining):\n${list}\n\n` +
-						`This is a long-running task — keep working autonomously and do not stop to ask for ` +
-						`confirmation. Call \`update_objectives\` as you make progress, and continue until every ` +
-						`item is done.\n` +
+						`Keep working autonomously, no confirmation needed. Update objectives as you progress.\n` +
 						`</system-reminder>`,
 				},
 			],
@@ -341,6 +384,15 @@ export default function (pi: ExtensionAPI): void {
 	// stalled attempts in a row (no change in objectives state) so a genuinely
 	// stuck or blocked model doesn't spin forever unattended.
 	pi.on("agent_end", async (_event, ctx) => {
+		if (blockedReason) {
+			stats.blockedStops++;
+			ctx.ui.notify(`update_objectives: stopped — ${blockedReason}`, "error");
+			blockedReason = null;
+			stalledContinues = 0;
+			lastContinueSignature = null;
+			return;
+		}
+
 		const remaining = objectives.filter((o) => !o.done).length;
 		if (remaining === 0) {
 			stalledContinues = 0;
@@ -374,8 +426,12 @@ export default function (pi: ExtensionAPI): void {
 				customType: "objectives-continue",
 				content:
 					`<system-reminder>\n` +
-					`You stopped, but ${remaining} objective${remaining === 1 ? "" : "s"} ${remaining === 1 ? "is" : "are"} still not done:\n${list}\n\n` +
-					`Continue working autonomously — call \`update_objectives\` as you make progress, and only stop once every item is done.\n` +
+					`${remaining} objective${remaining === 1 ? "" : "s"} not done:\n${list}\n\n` +
+					`Keep going — call \`update_objectives\` as you progress.\n\n` +
+					`Only call \`objectives_blocked\` (reason) iff truly stuck — missing/unobtainable credentials, an ` +
+					`unreachable dependency, contradictory requirements, a decision only a human can make, or an ` +
+					`irreversible action needing authorization. Uncertainty, wanting confirmation, or asking whether ` +
+					`to continue a long task are not blocks — keep working.\n` +
 					`</system-reminder>`,
 				display: true,
 				details: { remaining, objectives } as ObjectivesContinueDetails,
