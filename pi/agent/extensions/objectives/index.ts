@@ -271,7 +271,7 @@ export default function (pi: ExtensionAPI): void {
 		promptGuidelines: [
 			"Use update_objectives to set and maintain a to-do list on any task that will span many turns. Pass the full, current list each call — it replaces the previous one.",
 			"Call update_objectives immediately after finishing each objective, marking it done, before moving on to the next one — don't batch updates until the end.",
-			"Call update_objectives to add or change items as the task evolves. Don't stop the task before every objective is done.",
+			"Call update_objectives to complete items, change existing ones, or add new items if you discover additional work. Don't stop the task before every objective is done.",
 		],
 		parameters: Type.Object({
 			objectives: Type.Array(
