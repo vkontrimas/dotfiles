@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.80.10",
+  "lastChangelogVersion": "0.82.0",
   "defaultProvider": "bifrost",
   "defaultModel": "vllm/qwen3.6-27b-q5km-mtp",
   "packages": [
