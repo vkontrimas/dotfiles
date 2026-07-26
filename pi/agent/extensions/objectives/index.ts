@@ -31,8 +31,9 @@
  */
 
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
-import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
+import { getMarkdownTheme, renderDiff } from "@earendil-works/pi-coding-agent";
 import { Box, Markdown, Text } from "@earendil-works/pi-tui";
+import { diffLines } from "diff";
 import { Type } from "typebox";
 
 interface Objective {
@@ -91,6 +92,42 @@ function renderObjectivesBlock(theme: Theme, objectives: Objective[]): string {
 
 function renderObjectivesChecklist(objectives: Objective[]): string {
 	return objectives.map((o) => `- [${o.done ? "x" : " "}] ${o.text}`).join("\n");
+}
+
+// Builds the "+N ", "-N ", " N " line format that Pi's own renderDiff (used
+// by the built-in edit tool) expects, so update_objectives diffs get the
+// same red/green + intra-line word-highlight rendering as file edits. Mirrors
+// generateDiffString from pi-coding-agent's edit-diff.ts (not itself
+// exported), minus context truncation — objectives lists are short enough to
+// always show in full.
+function buildObjectivesDiff(oldObjectives: Objective[], newObjectives: Objective[]): string {
+	const toLine = (o: Objective) => `[${o.done ? "x" : " "}] ${o.text}`;
+	const oldText = oldObjectives.map(toLine).join("\n");
+	const newText = newObjectives.map(toLine).join("\n");
+	const parts = diffLines(oldText, newText);
+
+	const output: string[] = [];
+	let oldLineNum = 1;
+	let newLineNum = 1;
+	for (const part of parts) {
+		const raw = part.value.split("\n");
+		if (raw[raw.length - 1] === "") raw.pop();
+
+		for (const line of raw) {
+			if (part.added) {
+				output.push(`+${newLineNum} ${line}`);
+				newLineNum++;
+			} else if (part.removed) {
+				output.push(`-${oldLineNum} ${line}`);
+				oldLineNum++;
+			} else {
+				output.push(` ${oldLineNum} ${line}`);
+				oldLineNum++;
+				newLineNum++;
+			}
+		}
+	}
+	return output.join("\n");
 }
 
 // How many turns to let pass between reminders.
@@ -246,7 +283,8 @@ export default function (pi: ExtensionAPI): void {
 			),
 		}),
 		async execute(_toolCallId, params) {
-			const prevTexts = new Set(objectives.map((o) => o.text));
+			const prevObjectives = objectives;
+			const prevTexts = new Set(prevObjectives.map((o) => o.text));
 			const nextTexts = new Set(params.objectives.map((o) => o.text));
 			stats.objectivesCreated += [...nextTexts].filter((t) => !prevTexts.has(t)).length;
 			stats.objectivesDeleted += [...prevTexts].filter((t) => !nextTexts.has(t)).length;
@@ -255,6 +293,8 @@ export default function (pi: ExtensionAPI): void {
 				stats.turnGapsSinceLastUpdate.push(totalTurns - lastUpdateTurn);
 			}
 			lastUpdateTurn = totalTurns;
+
+			const diff = buildObjectivesDiff(prevObjectives, params.objectives);
 
 			objectives = params.objectives;
 			turnsSinceReminder = 0;
@@ -267,7 +307,7 @@ export default function (pi: ExtensionAPI): void {
 						text: `Objectives updated (${objectives.length - remaining}/${objectives.length} done, ${remaining} remaining).`,
 					},
 				],
-				details: { objectives },
+				details: { objectives, diff },
 			};
 		},
 		renderCall(args, theme, context) {
@@ -305,8 +345,18 @@ export default function (pi: ExtensionAPI): void {
 				return text;
 			}
 
-			const objectives = (result.details as { objectives?: Objective[] } | undefined)?.objectives ?? [];
-			text.setText(renderObjectivesBlock(theme, objectives));
+			const details = result.details as { objectives?: Objective[]; diff?: string } | undefined;
+			const objectives = details?.objectives ?? [];
+			const remaining = objectives.filter((o) => !o.done).length;
+			const done = objectives.length - remaining;
+
+			let output = `${theme.fg("toolTitle", theme.bold("update_objectives"))} ${theme.fg("accent", `(${done}/${objectives.length} done, ${remaining} remaining)`)}`;
+
+			if (details?.diff) {
+				output += `\n\n${renderDiff(details.diff)}`;
+			}
+
+			text.setText(output);
 			return text;
 		},
 	});
