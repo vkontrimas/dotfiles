@@ -43,7 +43,14 @@
  *
  * The periodic reminder is injected via the `context` event, so it's only
  * visible to the model on the next LLM call — it's never written to the
- * session log or shown in the UI.
+ * session log or shown in the UI. It lists only what's still pending: a
+ * completed task's tool call and result are already in history, evidence and
+ * all, so repeating it every few turns spent tokens restating what the model
+ * just did.
+ *
+ * The user's view of progress is the footer status bar (`ui.setStatus`), kept
+ * at "tasks done/total" for the life of the list — the whole list is still one
+ * `/tasks` away, but the count is always on screen and costs no context.
  *
  * If the agent stops (goes idle) while tasks remain, an `agent_end` handler
  * pushes a real follow-up message telling it to keep going, up to a few
@@ -141,27 +148,21 @@ function renderTaskLines(theme: Theme, tasks: Task[], showEvidence = false): str
 }
 
 // Model-facing rendering (<system-reminder> content only, never shown in the
-// chat UI). Pending items carry their `evidence` criterion — the check the
-// model committed to, repeated back so it can tell whether the task is
-// completable right now. Completed items carry the evidence actually observed,
-// so past completions stay auditable across the reminder cycle too.
+// chat UI). Only pending tasks are listed — a completed task's complete_task
+// call and result are already in history saying so, with the evidence, so
+// re-listing it in every reminder spent tokens restating what the model just
+// did. What's left is the part it still has to act on.
+//
+// Each item carries its `evidence` criterion — the check the model committed
+// to, repeated back so it can tell whether the task is completable right now.
 //
 // `reason` is deliberately absent: it's already in the model's own add_tasks
 // call arguments, which stay in history, so repeating it here only spent
 // tokens.
-function renderTaskChecklistForModel(tasks: Task[]): string {
+function renderPendingChecklistForModel(tasks: Task[]): string {
 	return tasks
-		.map((t) => {
-			const box = t.done ? "x" : " ";
-			const suffix = t.done
-				? t.completedEvidence
-					? ` — done: ${t.completedEvidence}`
-					: ""
-				: t.evidence
-					? ` — evidence: ${t.evidence}`
-					: "";
-			return `- [${box}] ${t.id} ${t.text}${suffix}`;
-		})
+		.filter((t) => !t.done)
+		.map((t) => `- [ ] ${t.id} ${t.text}${t.evidence ? ` — evidence: ${t.evidence}` : ""}`)
 		.join("\n");
 }
 
@@ -225,6 +226,18 @@ export default function (pi: ExtensionAPI): void {
 	let blockedIds: string[] = [];
 	const stats = newStats();
 
+	// Live "tasks done/total" in the footer status bar. The list is the one bit
+	// of state the user otherwise has to run /tasks to see, and the footer shows
+	// it continuously for zero context. Cleared when no list is active.
+	const updateStatus = (ctx: ExtensionContext) => {
+		if (tasks.length === 0) {
+			ctx.ui.setStatus("tasks", undefined);
+			return;
+		}
+		const done = tasks.filter((t) => t.done).length;
+		ctx.ui.setStatus("tasks", `tasks ${done}/${tasks.length}`);
+	};
+
 	const recordActivity = () => {
 		if (lastActivityTurn !== null) {
 			stats.turnGapsSinceLastUpdate.push(totalTurns - lastActivityTurn);
@@ -278,6 +291,8 @@ export default function (pi: ExtensionAPI): void {
 		lastActivityTurn = null;
 		stalledContinues = 0;
 		lastContinueSignature = null;
+
+		updateStatus(ctx);
 	};
 
 	pi.on("session_start", async (_event, ctx) => reconstructTasks(ctx));
@@ -355,6 +370,7 @@ export default function (pi: ExtensionAPI): void {
 			// the last add_tasks/complete_task results.
 			pi.appendEntry("tasks-cleared", {});
 
+			updateStatus(ctx);
 			ctx.ui.notify("Tasks cleared.", "info");
 		},
 	});
@@ -418,7 +434,7 @@ export default function (pi: ExtensionAPI): void {
 				{ minItems: 1, description: "New tasks to append to the list." },
 			),
 		}),
-		async execute(_toolCallId, params) {
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const added: Task[] = params.tasks.map((t) => ({
 				id: `task_${nextId++}`,
 				text: t.text,
@@ -431,6 +447,7 @@ export default function (pi: ExtensionAPI): void {
 			stats.tasksCreated += added.length;
 			stats.addCalls++;
 			recordActivity();
+			updateStatus(ctx);
 
 			const remaining = tasks.filter((t) => !t.done).length;
 
@@ -517,7 +534,7 @@ export default function (pi: ExtensionAPI): void {
 					"not a changelog of changes made. Shown to the user for spot-checking.",
 			}),
 		}),
-		async execute(_toolCallId, params) {
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const idx = tasks.findIndex((t) => t.id === params.id);
 			if (idx === -1) {
 				const ids = tasks.map((t) => t.id).join(", ") || "(none)";
@@ -532,6 +549,7 @@ export default function (pi: ExtensionAPI): void {
 			tasks = tasks.map((t, i) => (i === idx ? updated : t));
 			stats.completeCalls++;
 			recordActivity();
+			updateStatus(ctx);
 
 			const diff = buildTasksDiff(prevTasks, tasks);
 			const remaining = tasks.filter((t) => !t.done).length;
@@ -650,14 +668,16 @@ export default function (pi: ExtensionAPI): void {
 	});
 
 	pi.on("context", async (event) => {
-		if (tasks.length === 0) return;
+		const remaining = tasks.filter((t) => !t.done).length;
+		// Nothing pending means nothing to remind about — the reminder lists only
+		// pending tasks, so with an all-done list it would just be a header.
+		if (remaining === 0) return;
 		if (turnsSinceReminder < REMINDER_EVERY_N_TURNS) return;
 
 		turnsSinceReminder = 0;
 		stats.remindersSent++;
 
-		const remaining = tasks.filter((t) => !t.done).length;
-		const list = renderTaskChecklistForModel(tasks);
+		const list = renderPendingChecklistForModel(tasks);
 
 		const reminder = {
 			role: "user" as const,
@@ -721,7 +741,7 @@ export default function (pi: ExtensionAPI): void {
 
 		stats.autoContinues++;
 		turnsSinceReminder = 0;
-		const list = renderTaskChecklistForModel(tasks);
+		const list = renderPendingChecklistForModel(tasks);
 
 		pi.sendMessage(
 			{
