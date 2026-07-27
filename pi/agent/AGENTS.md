@@ -14,3 +14,25 @@ Use when:
 - Always `git status` before commiting.
 - Only commit your changes.
 - Never push unless asked.
+
+### Never destroy work you didn't do
+Any change you didn't make is the user's. Never discard it — stash it, commit yours, restore it.
+
+Forbidden on files you didn't touch: `git checkout -- <file>`, `git restore <file>`, `git reset --hard`, `git clean -fd`, `git stash` without `pop`.
+
+```bash
+# You changed src/main.rs; user has edits in config.toml
+git stash push -- config.toml
+git add src/main.rs && git commit -m "fix: ..."
+git stash pop
+```
+
+```bash
+# Your change conflicts with the user's edit in the same file:
+# stop and ask. Don't overwrite, don't revert.
+```
+
+```bash
+# Rebase/merge hits a conflict in a file you never touched:
+git rebase --abort   # not `git checkout --ours`
+```
