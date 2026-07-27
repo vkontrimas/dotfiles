@@ -48,6 +48,11 @@
  * all, so repeating it every few turns spent tokens restating what the model
  * just did.
  *
+ * `/tasks-clear` drops the list and queues a one-shot notice through that same
+ * `context` event. Clearing the extension's own state isn't enough on its own:
+ * the add_tasks calls and older reminders stay in the transcript, so a model
+ * that never hears otherwise keeps working a list the user already threw away.
+ *
  * The user's view of progress is the footer status bar (`ui.setStatus`), kept
  * at "tasks done/total" for the life of the list — the whole list is still one
  * `/tasks` away, but the count is always on screen and costs no context.
@@ -226,6 +231,8 @@ export default function (pi: ExtensionAPI): void {
 	let lastActivityTurn: number | null = null;
 	let blockedReason: string | null = null;
 	let blockedIds: string[] = [];
+	// Set by /tasks-clear, consumed by the next `context` event.
+	let clearedNotice = false;
 	const stats = newStats();
 
 	// Live "tasks done/total" in the footer status bar. The list is the one bit
@@ -351,9 +358,9 @@ export default function (pi: ExtensionAPI): void {
 		},
 	});
 
-	// /tasks-clear — drop the current list without touching the session/context
+	// /tasks-clear — drop the list, and tell the model it's gone
 	pi.registerCommand("tasks-clear", {
-		description: "Clear the current task list without sending anything to the model",
+		description: "Clear the current task list",
 		handler: async (_args, ctx) => {
 			if (tasks.length === 0) {
 				ctx.ui.notify("No tasks to clear.", "info");
@@ -366,6 +373,13 @@ export default function (pi: ExtensionAPI): void {
 			lastActivityTurn = null;
 			stalledContinues = 0;
 			lastContinueSignature = null;
+			blockedReason = null;
+			blockedIds = [];
+			// The add_tasks calls and past reminders are still sitting in history,
+			// so dropping the list here isn't enough — without a word, the model
+			// just keeps working the list it can still read. Queued for the next
+			// LLM call rather than sent now, so clearing still doesn't start a turn.
+			clearedNotice = true;
 
 			// Persist the clear so it survives /reload, /resume, and /tree —
 			// otherwise reconstructTasks would just replay the old list back from
@@ -669,36 +683,47 @@ export default function (pi: ExtensionAPI): void {
 		totalTurns++;
 	});
 
+	const systemReminder = (text: string) => ({
+		role: "user" as const,
+		timestamp: Date.now(),
+		content: [{ type: "text" as const, text: `<system-reminder>\n${text}\n</system-reminder>` }],
+	});
+
 	pi.on("context", async (event) => {
+		const injected: ReturnType<typeof systemReminder>[] = [];
+
+		// /tasks-clear happened since the last call. The list is gone from this
+		// extension, but not from the transcript the model is about to read.
+		if (clearedNotice) {
+			clearedNotice = false;
+			injected.push(
+				systemReminder(
+					"The user cleared the task list. Every task added earlier is cancelled — stop working on them and " +
+						"don't re-add them from memory. Any task list still visible earlier in this conversation is stale. " +
+						"Wait for the user's next instruction.",
+				),
+			);
+		}
+
 		const remaining = tasks.filter((t) => !t.done).length;
 		// Nothing pending means nothing to remind about — the reminder lists only
 		// pending tasks, so with an all-done list it would just be a header.
-		if (remaining === 0) return;
-		if (turnsSinceReminder < REMINDER_EVERY_N_TURNS) return;
+		if (remaining > 0 && turnsSinceReminder >= REMINDER_EVERY_N_TURNS) {
+			turnsSinceReminder = 0;
+			stats.remindersSent++;
 
-		turnsSinceReminder = 0;
-		stats.remindersSent++;
-
-		const list = renderPendingChecklistForModel(tasks);
-
-		const reminder = {
-			role: "user" as const,
-			timestamp: Date.now(),
-			content: [
-				{
-					type: "text" as const,
-					text:
-						`<system-reminder>\n` +
-						`Tasks (${remaining} remaining):\n${list}\n\n` +
+			injected.push(
+				systemReminder(
+					`Tasks (${remaining} remaining):\n${renderPendingChecklistForModel(tasks)}\n\n` +
 						`Keep working autonomously, no confirmation needed. As each task ends, run its evidence check and ` +
 						`call complete_task with what you observed — one task at a time, not a batch at the end. Call ` +
-						`add_tasks if you discover more work.\n` +
-						`</system-reminder>`,
-				},
-			],
-		};
+						`add_tasks if you discover more work.`,
+				),
+			);
+		}
 
-		return { messages: [...event.messages, reminder] };
+		if (injected.length === 0) return;
+		return { messages: [...event.messages, ...injected] };
 	});
 
 	// The agent stopped and is about to go idle — if tasks remain, push it to
