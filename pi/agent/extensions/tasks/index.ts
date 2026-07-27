@@ -54,7 +54,9 @@
  *
  * If the agent stops (goes idle) while tasks remain, an `agent_end` handler
  * pushes a real follow-up message telling it to keep going, up to a few
- * attempts before giving up and notifying the user. That message also mentions
+ * attempts before giving up and notifying the user. A run the user aborted
+ * (escape) is exempt — that's an interrupt, not the agent deciding it's done,
+ * and re-prompting through it would make escape unusable mid-list. That message also mentions
  * a second, deliberately hidden tool — `tasks_blocked` — with specific
  * examples of what counts as a genuine structural blocker (missing
  * credentials, contradictory requirements, decisions only a human can make,
@@ -703,7 +705,15 @@ export default function (pi: ExtensionAPI): void {
 	// keep going instead of waiting for the user. Bails out after a few stalled
 	// attempts in a row (no change in task state) so a genuinely stuck or
 	// blocked model doesn't spin forever unattended.
-	pi.on("agent_end", async (_event, ctx) => {
+	pi.on("agent_end", async (event, ctx) => {
+		// The user hit escape: this run was interrupted, not finished. Auto-continue
+		// exists to stop the model from going idle on its own — overriding an
+		// explicit interrupt would make escape unusable while a list is active.
+		// Leave the list and the stall counters untouched, so whenever the user
+		// does resume, the loop picks up exactly where it was.
+		const lastAssistant = [...event.messages].reverse().find((m) => m.role === "assistant");
+		if (lastAssistant?.stopReason === "aborted") return;
+
 		if (blockedReason) {
 			stats.blockedStops++;
 			const names = blockedIds.map((id) => tasks.find((t) => t.id === id)?.text ?? id).join(", ");
