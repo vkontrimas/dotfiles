@@ -235,6 +235,7 @@ export default function (pi: ExtensionAPI) {
       "- Spawn a subagent when the task requires browsing 3+ files, searching across directories, or would take more than ~5 tool calls here",
       "- Spawn for broad questions: 'how does X work?', 'map the codebase', 'find all uses of Y', 'review these changes'",
       "- Skip seqagent for narrow lookups: reading one known file, checking a function signature, a simple grep",
+      "- Spawn when you're stuck: the same fix tried twice, or two failed attempts at one bug. A fresh context isn't anchored to your wrong theory — hand `investigate` the symptom and what you already ruled out",
       "- Skip seqagent when the task depends on context from this conversation",
       "- Use explore/investigate before planning changes; use research for external info",
       "- Use review only for large changes: 10+ files, ~10k+ LOC, or architectural shifts. Skip it for smaller work.",
