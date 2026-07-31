@@ -41,8 +41,12 @@
 # only 16 of 64 layers are real full-attention (KV-cache-bearing); the other
 # 48 are linear-attention (small fixed-size recurrent state, doesn't scale
 # with context). This is why full 262144-token context is affordable at all
-# on two 24GB cards even with q8_0 KV: ~2048 KV elements/token across the 16
-# full-attention layers, not 64.
+# on two 24GB cards even with q8_0 KV: 2048 KV elements/token PER full-
+# attention layer (4 kv-heads x 256 key_length, plus the same for value),
+# across 16 such layers rather than 64. That works out to 32768 elements or
+# 34 KiB/token at q8_0 -> ~8.5GB of KV for the full 262144 window. (An
+# earlier version of this note read "~2048 elements/token across the 16
+# layers", which understated the total by 16x.)
 #
 # GPU split: explicit --tensor-split skewed heavily toward GPU1 — the goal
 # is MINIMAL GPU0 usage (headless card GPU1 should carry as much as it can
@@ -130,8 +134,31 @@ services:
       - "2048"
       - -ub
       - "1024"
+      # Stays at 1 deliberately. --ctx-size is a TOTAL pool that llama.cpp
+      # divides by slot count (verified: -c 8192 -np 2 -> n_ctx_slot 4096),
+      # so -np 2 would halve every slot to 131072 — and real agent contexts
+      # here run 200-206K tokens, which would silently truncate. Two slots
+      # at full context would need -c 524288 = +8.5GB KV, which doesn't fit.
+      # The subagent-eviction problem is solved by --cache-ram below instead.
       - -np
       - "1"
+      # Host-RAM prompt cache (ggml-org/llama.cpp#16391). Paired with
+      # --cache-idle-slots (default enabled), this snapshots the idle slot's
+      # KV state to host RAM when a new task takes the slot, then restores it
+      # instead of reprefilling — exactly the main-agent/subagent swap case.
+      #
+      # SIZING (measured, not guessed): KV is 34 KiB/token here — 16 full-
+      # attention layers x (4 kv-heads x 256 key_length + same for value) x
+      # 1.0625 B/elem for q8_0. So a 200K-token conversation snapshots to
+      # ~6.6GB, and observed evicted entries were 1.1-7.4GB, matching. The
+      # 8192 MiB default therefore holds exactly ONE conversation: the
+      # subagent's entry evicted the main agent's every single time, costing
+      # a full reprefill (measured: 201,506 tokens / 341s at ~590 tok/s).
+      # 16384 fits two full-size entries with headroom; 12288 would fit one
+      # full + one partial and still thrash when both agents run long.
+      # Box has 46GB RAM (~38GB available), so 16GB is comfortable.
+      - --cache-ram
+      - "16384"
       - -ctk
       - q8_0
       - -ctv
