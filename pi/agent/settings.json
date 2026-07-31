@@ -7,6 +7,12 @@
     "npm:@marcfargas/pi-heartbeat",
     "npm:pi-ask-user"
   ],
+  "httpIdleTimeoutMs": 1200000,
+  "retry": {
+    "provider": {
+      "timeoutMs": 1200000
+    }
+  },
   "hideThinkingBlock": true,
   "defaultThinkingLevel": "high",
   "theme": "dark"
