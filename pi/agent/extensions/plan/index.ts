@@ -10,6 +10,12 @@
  *   4. Agent calls present_plan, which opens the file in the external editor and shows it in chat
  *   5. Agent can keep editing the file directly and call present_plan again to re-show it —
  *      no need to round-trip the whole plan content through a tool call each time
+ *   6. present_plan tracks the content it last showed (per file, in-memory for the
+ *      session) and, on every call, diffs the on-disk content against that baseline
+ *      before doing anything else. If it differs — because the user edited it in the
+ *      inline editor during a prior call, or touched the file some other way between
+ *      calls — the tool result says so and includes a short summary, so the agent
+ *      doesn't blindly assume the file still matches what it last wrote or read.
  *
  * The actual instructions live in `pi/agent/skills/planning.md` — a skill with
  * `disable-model-invocation: true` so it never surfaces in the model's own
@@ -127,6 +133,24 @@ function spawnEditor(filePath: string, cwd: string): boolean {
 	}
 }
 
+// --- Presented-content tracking ---
+//
+// Keyed by absolute plan file path, holds the content as of the end of the
+// last present_plan call for that file. In-memory only (per session) — good
+// enough since a fresh process has no prior presentation to compare against.
+const presentedContent = new Map<string, string>();
+
+// Short, human-readable description of where two versions of a file first
+// diverge. Not a real diff — just enough for the agent to know something
+// changed and roughly where, without spending tokens on a full unified diff.
+function summarizeChange(oldContent: string, newContent: string): string {
+	const oldLines = oldContent.split("\n");
+	const newLines = newContent.split("\n");
+	let i = 0;
+	while (i < oldLines.length && i < newLines.length && oldLines[i] === newLines[i]) i++;
+	return `first difference at line ${i + 1} (was ${oldLines.length} lines, now ${newLines.length} lines)`;
+}
+
 // --- Banner data type ---
 
 interface PlanBannerData {
@@ -195,7 +219,10 @@ export default function (pi: ExtensionAPI): void {
 		description:
 			"Present a plan you've already written to .pi/plans/<slug>.md with your normal write/edit tools. " +
 			"Opens it in the external editor and shows it in chat. Call this again after editing the file " +
-			"directly to re-present a revised version — you don't need to pass the plan content through this tool.",
+			"directly to re-present a revised version — you don't need to pass the plan content through this tool. " +
+			"If the file changed since it was last presented (e.g. the user edited it in the editor), the result " +
+			"flags that and returns the current on-disk content — re-read it before assuming the plan still says " +
+			"what you last wrote.",
 		parameters: Type.Object({
 			slug: Type.String({ description: "Filename slug (without .md extension) of the plan file you wrote, e.g. 'add-utf-8-slicing'." }),
 		}),
@@ -212,6 +239,14 @@ export default function (pi: ExtensionAPI): void {
 					`Could not read ${filePath}. Write the plan there with your normal write tool first, then call present_plan.`,
 				);
 			}
+
+			// Content differing from what this tool last showed means someone (most
+			// likely the user, via the inline editor from a prior call) touched the
+			// file since then. Note it now; the editor session below can still change
+			// things further, so the final comparison happens after that.
+			const previouslyPresented = presentedContent.get(filePath);
+			const editedBeforeThisCall = previouslyPresented !== undefined && previouslyPresented !== content;
+			const editedBeforeThisCallSummary = editedBeforeThisCall ? summarizeChange(previouslyPresented!, content) : null;
 
 			// Open editor inline (same window as Pi) — TUI stop/spawn/start
 			let editorOpened = false;
@@ -257,6 +292,31 @@ export default function (pi: ExtensionAPI): void {
 				editorOpened = spawnEditor(filePath, ctx.cwd);
 			}
 
+			// The TUI branch blocks until the editor closes, so re-read now to pick up
+			// anything the user changed and saved during this call's editing session.
+			// (The detached spawnEditor branch doesn't block, so this is a no-op there —
+			// any edits made in that background editor will only surface on the *next*
+			// present_plan call, via the editedBeforeThisCall check above.)
+			let finalContent = content;
+			if (ctx.mode === "tui" && ctx.hasUI) {
+				try {
+					finalContent = readFileSync(filePath, "utf-8");
+				} catch {
+					finalContent = content;
+				}
+			}
+			const editedDuringThisCall = finalContent !== content;
+
+			presentedContent.set(filePath, finalContent);
+
+			const editNotes: string[] = [];
+			if (editedBeforeThisCall) {
+				editNotes.push(`⚠️ This plan was edited since it was last presented (${editedBeforeThisCallSummary}).`);
+			}
+			if (editedDuringThisCall) {
+				editNotes.push(`⚠️ The plan was edited in the editor just now (${summarizeChange(content, finalContent)}). The content below reflects those edits.`);
+			}
+
 			return {
 				content: [
 					{
@@ -264,10 +324,11 @@ export default function (pi: ExtensionAPI): void {
 						text: [
 							`📋 Presenting \`.pi/plans/${slug}.md\``,
 							editorOpened ? `\nOpened in editor (\`${resolveEditor()}\`)` : `\nEditor spawn skipped — open \`.pi/plans/${slug}.md\` manually`,
+							...editNotes.map((note) => `\n\n${note}`),
 						].join(""),
 					},
 				],
-				details: { path: filePath, content },
+				details: { path: filePath, content: finalContent },
 			};
 		},
 		renderCall(args, theme, context) {
