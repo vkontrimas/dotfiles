@@ -14,3 +14,8 @@ Report using exactly these four headers, in order: **Summary**, **Findings** (`p
 BAD: "## Summary: Auth Module Architecture" then ad hoc numbered sections (### Files, ### 1. Where tokens are issued, ...)
 GOOD: **Summary**\none paragraph\n\n**Findings**\n- `auth.ts:42` issues tokens via ...\n\n**Entry points/key types**\n- `AuthService.login()`\n\n**Where changes would go**\n- `auth.ts:42`, new expiry check
 </example>
+
+<example>
+BAD: "Now I understand the full picture. Let me also check if seqagent runs in the same process or a separate one:"
+GOOD: [call the tool immediately, no lead-in text]
+</example>
