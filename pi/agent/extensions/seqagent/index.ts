@@ -582,7 +582,7 @@ export default function (pi: ExtensionAPI) {
   // loaded globally for every `pi` invocation, including seqagent's children.
 
   if (process.env.SEQAGENT_SUBAGENT === "1") {
-    const SUMMARY_INTERVAL_TURNS = 2; // configurable cadence
+    const SUMMARY_INTERVAL_TURNS = 3; // configurable cadence
     const SUMMARY_PROMPT =
       "8 words max, fragment (drop articles/\"I\"), no hedging (\"let me\", \"I will\"). " +
       "What are you doing right now?";

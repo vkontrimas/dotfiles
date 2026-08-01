@@ -28,7 +28,7 @@ try {
   tasksApi = null;
 }
 
-const SUMMARY_INTERVAL_TURNS = 2; // configurable cadence
+const SUMMARY_INTERVAL_TURNS = 3; // configurable cadence
 const SUMMARY_MAX_CHARS = 80;
 const SUMMARY_PROMPT =
   "8 words max, fragment (drop articles/\"I\"), no hedging (\"let me\", \"I will\"). " +
