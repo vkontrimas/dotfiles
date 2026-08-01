@@ -260,7 +260,17 @@ let piRef: ExtensionAPI | null = null;
 // Live "tasks done/total" in the footer status bar. The list is the one bit
 // of state the user otherwise has to run /tasks to see, and the footer shows
 // it continuously for zero context. Cleared when no list is active.
+//
+// Also pushes the same counts on the shared event bus (`tasks:updated`) for
+// other extensions (e.g. `working-status`) to consume live. This is not the
+// same as importing this module: pi's extension loader gives each extension
+// its own jiti instance with moduleCache disabled, so a sibling extension's
+// `import("pi-tasks")` re-evaluates this file from scratch in an isolated
+// instance and never sees these mutations. `pi.events` is a single bus
+// owned by pi's core runtime and handed to every extension's `pi`, so it
+// doesn't have that problem.
 function updateStatus(ctx: ExtensionContext): void {
+	piRef?.events.emit("tasks:updated", { total: tasks.length, remaining: tasks.filter(isOpen).length });
 	if (tasks.length === 0) {
 		ctx.ui.setStatus("tasks", undefined);
 		return;

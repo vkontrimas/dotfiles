@@ -5,18 +5,18 @@
  *
  *   Working... · 5/10 tasks · <live one-sentence summary>
  *
- * The tasks segment reads task state directly from the session branch
- * (replaying add_tasks/complete_task/cancel_task tool results, the same
- * technique `tasks/index.ts`'s own `reconstructTasks` uses) instead of
- * importing the `tasks` extension's module. That import path was tried
- * first (an optionalDependency + `await import("pi-tasks")`, mirroring
- * `plan/index.ts`'s soft-dependency pattern) but doesn't work: pi's
- * extension loader (`core/extensions/loader.js`) creates a fresh jiti
- * instance per extension with `moduleCache: false`, so a sibling
- * extension's dynamic import re-evaluates that module from scratch in an
- * isolated instance — mutations from the real `tasks` extension's tool
- * calls are invisible to it. Reading straight from session entries sidesteps
- * that entirely and needs no npm/symlink setup, so it's also simpler.
+ * The tasks segment listens on the shared event bus (`pi.events`) for
+ * `tasks:updated`, pushed by `tasks/index.ts` whenever its list changes.
+ * This is not the same as importing the `tasks` extension's module —
+ * that path was tried first (an optionalDependency + `await import("pi-tasks")`,
+ * mirroring `plan/index.ts`'s soft-dependency pattern) but doesn't work:
+ * pi's extension loader (`core/extensions/loader.js`) creates a fresh jiti
+ * instance per extension with `moduleCache: false`, so a sibling extension's
+ * dynamic import re-evaluates that module from scratch in an isolated
+ * instance — mutations from the real `tasks` extension's tool calls are
+ * invisible to it. `pi.events` doesn't have that problem: it's a single bus
+ * owned by pi's core runtime and handed to every extension's `pi`, not
+ * something each extension's own module recreates.
  *
  * The summary segment reuses the ephemeral side-channel completion pattern
  * from `seqagent/index.ts`: on the first turn of a run, and every
@@ -42,43 +42,9 @@ function buildKickoffPrompt(requestText: string): string {
   );
 }
 
-// Mirrors tasks/index.ts's Task shape and isOpen() just enough to count —
-// see that file for the authoritative definition.
-interface TaskLike {
-  id: string;
-  done?: boolean;
-  cancelled?: boolean;
-}
-
-function isOpen(t: TaskLike): boolean {
-  return !t.done && !t.cancelled;
-}
-
-// Replays add_tasks/complete_task/cancel_task tool results on the current
-// session branch to derive live counts, the same way tasks/index.ts's own
-// reconstructTasks() rebuilds its in-memory list on session_start/session_tree.
-function getTaskCounts(ctx: ExtensionContext): { total: number; remaining: number } {
-  let tasks: TaskLike[] = [];
-  for (const entry of ctx.sessionManager.getBranch()) {
-    if (entry.type === "custom" && entry.customType === "tasks-cleared") {
-      tasks = [];
-      continue;
-    }
-    if (entry.type !== "message") continue;
-    const msg = entry.message;
-    if (msg.role !== "toolResult") continue;
-
-    if (msg.toolName === "add_tasks") {
-      const details = msg.details as { added?: TaskLike[] } | undefined;
-      if (!details?.added) continue;
-      tasks = [...tasks, ...details.added];
-    } else if (msg.toolName === "complete_task" || msg.toolName === "cancel_task") {
-      const details = msg.details as { task?: TaskLike } | undefined;
-      if (!details?.task) continue;
-      tasks = tasks.map((t) => (t.id === details.task!.id ? details.task! : t));
-    }
-  }
-  return { total: tasks.length, remaining: tasks.filter(isOpen).length };
+interface TaskCounts {
+  total: number;
+  remaining: number;
 }
 
 export default function (pi: ExtensionAPI) {
@@ -86,13 +52,17 @@ export default function (pi: ExtensionAPI) {
   let turnsSinceSummary = 0;
   let summarizedOnce = false;
   let currentSummary: string | undefined;
+  let taskCounts: TaskCounts = { total: 0, remaining: 0 };
 
-  const buildWorkingMessage = (ctx: ExtensionContext): string => {
+  pi.events.on("tasks:updated", (data) => {
+    taskCounts = data as TaskCounts;
+  });
+
+  const buildWorkingMessage = (): string => {
     const parts = ["Working..."];
-    const counts = getTaskCounts(ctx);
-    if (counts.total > 0) {
-      const done = counts.total - counts.remaining;
-      parts.push(`${done}/${counts.total} tasks`);
+    if (taskCounts.total > 0) {
+      const done = taskCounts.total - taskCounts.remaining;
+      parts.push(`${done}/${taskCounts.total} tasks`);
     }
     if (currentSummary) {
       const summary = currentSummary.length > SUMMARY_MAX_CHARS
@@ -107,7 +77,7 @@ export default function (pi: ExtensionAPI) {
     if (ctx.mode !== "tui") return;
     // Fold the tasks extension's own separate footer readout into this line instead.
     ctx.ui.setStatus("tasks", undefined);
-    ctx.ui.setWorkingMessage(buildWorkingMessage(ctx));
+    ctx.ui.setWorkingMessage(buildWorkingMessage());
   };
 
   pi.on("context", (event) => {
