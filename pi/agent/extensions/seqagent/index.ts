@@ -595,15 +595,6 @@ export default function (pi: ExtensionAPI) {
       "Rules: third-person. No first-person (I, we, my, our). No conversational text — no 'That's odd', 'Success!', 'Let's see', 'I need to'. No greetings. No low-level details.\n\n" +
       "Bad: 'I found the config file and am checking it'\n" +
       "Good: 'Config file located, verifying settings'";
-    function buildKickoffPrompt(requestText: string): string {
-      return (
-        "8 words max. High-level status fragment only.\n\n" +
-        "Rules: third-person. No first-person (I, we, my, our). No conversational text. No greetings. No low-level details.\n\n" +
-        "Bad: 'I found the config file and am checking it'\n" +
-        "Good: 'Config file located, verifying settings'\n\n" +
-        `Task: "${requestText}"`
-      );
-    }
 
     let lastMessages: Message[] = [];
     let turnsSinceSummary = 0;
@@ -649,13 +640,10 @@ export default function (pi: ExtensionAPI) {
       }
     };
 
-    // Fires once, before the subagent's very first request goes out — pi awaits
-    // before_agent_start handlers before building that request (see agent-session.js),
-    // so this stays serialized ahead of it, same as the turn_end summary below.
-    // Uses event.prompt directly (the CLI task text) since no context/history exists yet.
-    pi.on("before_agent_start", async (event, ctx) => {
+    // Reset state when the agent starts. The first summary fires on the first
+    // turn_end (via `!summarizedOnce` in the turn_end handler below).
+    pi.on("agent_start", () => {
       agentEnded = false;
-      await requestSummary(ctx, buildKickoffPrompt(event.prompt));
     });
 
     pi.on("agent_end", () => {

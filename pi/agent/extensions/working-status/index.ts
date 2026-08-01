@@ -19,36 +19,24 @@
  * something each extension's own module recreates.
  *
  * The summary segment reuses the ephemeral side-channel completion pattern
- * from `seqagent/index.ts`: on the first turn of a run, and every
+ * from `seqagent/index.ts`: on the first agent turn, and every
  * SUMMARY_INTERVAL_TURNS turns after, fire a standalone `complete()` call
  * using the exact message prefix the model just saw (so it reuses whatever
  * prompt cache that prefix already warmed) plus one ephemeral user message
  * asking for a one-sentence status. The result never touches the real
  * session/context — it only ever reaches the UI via `ctx.ui.setWorkingMessage`.
  *
- * Two things about that side-channel are easy to get wrong, and both showed up
- * as the same symptom — the summary answering "Waiting for your instructions."
- * during a `/plan` run:
- *
- *   - `context` fires *upstream* of message conversion. pi-agent-core's
- *     documented pipeline is `AgentMessage[] -> transformContext() ->
- *     AgentMessage[] -> convertToLlm() -> Message[] -> LLM`, and the `context`
- *     event is that `transformContext` hook, so `event.messages` still holds
- *     pi-internal roles — `custom`, `bashExecution`, `branchSummary`,
- *     `compactionSummary`. `complete()` takes the post-conversion `Message[]`
- *     and silently drops everything it doesn't recognize. Usually that costs a
- *     message or two; under `/plan` it costs *everything*, because both
- *     messages `/plan` sends (the planning skill and the prompt itself) are
- *     `role: "custom"`. Hence `convertToLlm(lastMessages)` at the call site
- *     rather than a cast.
- *
- *   - `before_agent_start` does not fire for every run. `sendCustomMessage`
- *     with `triggerTurn` goes straight to `_runAgentPrompt`
- *     (agent-session.js:1086) and never calls `emitBeforeAgentStart` — and
- *     that is precisely how `/plan` starts its turn. `agent_start` fires on
- *     both paths, so the run reset lives there, with `kickoffHandled` keeping
- *     the two from fighting over it (before_agent_start runs first and seeds
- *     the kickoff summary, so agent_start must not clear it).
+ * `context` fires *upstream* of message conversion. pi-agent-core's
+ * documented pipeline is `AgentMessage[] -> transformContext() ->
+ * AgentMessage[] -> convertToLlm() -> Message[] -> LLM`, and the `context`
+ * event is that `transformContext` hook, so `event.messages` still holds
+ * pi-internal roles — `custom`, `bashExecution`, `branchSummary`,
+ * `compactionSummary`. `complete()` takes the post-conversion `Message[]`
+ * and silently drops everything it doesn't recognize. Usually that costs a
+ * message or two; under `/plan` it costs *everything*, because both
+ * messages `/plan` sends (the planning skill and the prompt itself) are
+ * `role: "custom"`. Hence `convertToLlm(lastMessages)` at the call site
+ * rather than a cast.
  */
 import type { Message } from "@earendil-works/pi-ai";
 import { complete } from "@earendil-works/pi-ai/compat";
@@ -60,13 +48,6 @@ const SUMMARY_MAX_CHARS = 80;
 const SUMMARY_PROMPT =
   "8 words max. High-level only — no low-level details. " +
   "Cold, third-person observation. No conversational text. Fragment.";
-function buildKickoffPrompt(requestText: string): string {
-  return (
-    "8 words max. High-level only — no low-level details. " +
-    "Cold, third-person observation. No greeting. Fragment.\n\n" +
-    `Request: "${requestText}"`
-  );
-}
 
 interface TaskCounts {
   total: number;
@@ -82,8 +63,6 @@ export default function (pi: ExtensionAPI) {
   let summarizedOnce = false;
   let currentSummary: string | undefined;
   let taskCounts: TaskCounts = { total: 0, remaining: 0 };
-  // Set by before_agent_start, consumed by agent_start — see those handlers.
-  let kickoffHandled = false;
   let agentEnded = false;
 
   pi.events.on("tasks:updated", (data) => {
@@ -161,33 +140,10 @@ export default function (pi: ExtensionAPI) {
     agentEnded = false;
   };
 
-  // Fires once per *typed* user prompt, before the real first request goes out
-  // — pi awaits before_agent_start handlers before building that request (see
-  // agent-session.js), so this stays serialized ahead of it, same as the
-  // turn_end summary below.
-  pi.on("before_agent_start", async (event, ctx) => {
-    resetRun();
-    kickoffHandled = true;
-    await requestSummary(ctx, buildKickoffPrompt(event.prompt));
-  });
-
-  // Covers runs before_agent_start never sees: `sendCustomMessage` with
-  // `triggerTurn` calls `_runAgentPrompt` directly and skips
-  // `emitBeforeAgentStart` entirely (agent-session.js:1086), which is exactly
-  // how `/plan` starts its turn. agent_start does fire on both paths, so it's
-  // the only place stale state from the *previous* prompt can be cleared —
-  // without it the widget kept showing the last typed prompt's summary for the
-  // whole plan run.
-  //
-  // No kickoff summary here: this path carries no prompt text to summarize.
-  // The first turn_end fills it in instead (`!summarizedOnce` makes it due),
-  // so the plan run shows a bare "Working..." for one turn rather than a
-  // wrong one.
+  // Reset state at the start of every agent run. The first summary fires on the
+  // first turn_end (`!summarizedOnce` makes it due), so the status line shows
+  // a bare "Working..." for one turn while the first agent turn runs.
   pi.on("agent_start", (_event, ctx) => {
-    if (kickoffHandled) {
-      kickoffHandled = false; // before_agent_start already reset and seeded this run
-      return;
-    }
     resetRun();
     refreshWorkingMessage(ctx);
   });
