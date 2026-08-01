@@ -17,9 +17,30 @@
  * confirmation banner, the plan-prompt message — is already driving it; letting
  * the model self-invoke it outside that scaffolding would be half-wired). It's
  * read once at module load and injected verbatim, frontmatter stripped.
+ *
+ * Before any of that, `/plan` also decides what to do with a task list left
+ * over from a previous plan (see `maybeClearStaleTasks` below) — a fully
+ * finished list is cleared automatically, a partial one is either confirmed
+ * or left alone depending on what's available. This is a soft dependency on
+ * two other extensions, done with real imports/APIs rather than string-based
+ * detection:
+ *   - `pi-tasks` (the `tasks` extension) is a local, first-party package —
+ *     declared as an `optionalDependency` in package.json (`file:../tasks`)
+ *     and imported directly via a dynamic `import("pi-tasks")` at module
+ *     load. If it's not linked/installed, `tasksApi` stays `null` and this
+ *     whole feature is skipped, no `/plan` behavior changes.
+ *   - `pi-ask-user` (the `ask_user` tool) is a vendored third-party npm
+ *     package with no exports at all — nothing beyond its default Pi-loader
+ *     factory function is importable without forking it. So instead of
+ *     using its tool (which would mean going through the LLM), this calls
+ *     `ctx.ui.confirm` directly — the same first-party
+ *     `@earendil-works/pi-coding-agent` SDK primitive `ask_user` itself is
+ *     built on — gated on `pi.getActiveTools().includes("ask_user")` as a
+ *     presence signal for whether the user wants this kind of interactive
+ *     prompt at all.
  */
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getLanguageFromPath, getMarkdownTheme, highlightCode, keyHint } from "@earendil-works/pi-coding-agent";
 import { Box, Container, Markdown, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
@@ -27,6 +48,49 @@ import { spawn } from "child_process";
 import { readFileSync } from "fs";
 import { join } from "path";
 import { platform } from "os";
+
+// Soft dependency on the local `pi-tasks` extension — see the module-level
+// comment above. A dynamic import (not a static one) so a missing/unlinked
+// package degrades to `null` instead of throwing at module load and taking
+// this whole extension down with it.
+let tasksApi: typeof import("pi-tasks") | null = null;
+try {
+	tasksApi = await import("pi-tasks");
+} catch {
+	tasksApi = null;
+}
+
+// Decides what to do with a task list left over from a previous plan, before
+// a new one starts. Never blocks `/plan` itself — it only decides whether to
+// clear, ask, or leave the list alone first.
+async function maybeClearStaleTasks(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
+	if (!tasksApi) return;
+
+	const { total, remaining } = tasksApi.getTaskCounts();
+	if (total === 0) return;
+
+	if (remaining === 0) {
+		// Fully done (or cancelled) — nothing a user would want to review, so
+		// this is the one case that's silent and automatic.
+		tasksApi.clearAllTasks(ctx);
+		return;
+	}
+
+	if (pi.getActiveTools().includes("ask_user")) {
+		const shouldClear = await ctx.ui.confirm(
+			"Pending tasks",
+			`${remaining} task${remaining === 1 ? "" : "s"} still pending from a previous list. Clear them before starting this plan?`,
+		);
+		if (shouldClear) tasksApi.clearAllTasks(ctx);
+		return;
+	}
+
+	// No interactive-prompt extension available — don't guess, just say so.
+	ctx.ui.notify(
+		`${remaining} task${remaining === 1 ? "" : "s"} pending from a previous list — run /tasks-clear to clear them manually.`,
+		"info",
+	);
+}
 
 // --- Planning instructions (loaded from the planning skill) ---
 
@@ -90,6 +154,8 @@ export default function (pi: ExtensionAPI): void {
 				return;
 			}
 
+			await maybeClearStaleTasks(pi, ctx);
+
 			// Truncate long descriptions for the confirmation banner
 			const MAX_DESC = 80;
 			const shortDesc = description.length > MAX_DESC ? `${description.slice(0, MAX_DESC)}…` : description;
@@ -142,15 +208,9 @@ export default function (pi: ExtensionAPI): void {
 			try {
 				content = readFileSync(filePath, "utf-8");
 			} catch {
-				return {
-					isError: true,
-					content: [
-						{
-							type: "text" as const,
-							text: `Could not read ${filePath}. Write the plan there with your normal write tool first, then call present_plan.`,
-						},
-					],
-				};
+				throw new Error(
+					`Could not read ${filePath}. Write the plan there with your normal write tool first, then call present_plan.`,
+				);
 			}
 
 			// Open editor inline (same window as Pi) — TUI stop/spawn/start
@@ -184,7 +244,7 @@ export default function (pi: ExtensionAPI): void {
 						} catch {
 							try { tuiRef?.start(); tuiRef?.requestRender(true); } catch {}
 						} finally {
-							done();
+							done(undefined);
 						}
 					});
 
@@ -226,7 +286,7 @@ export default function (pi: ExtensionAPI): void {
 				.map((c) => c.text || "")
 				.join("\n");
 
-			if (result.isError) {
+			if (context.isError) {
 				text.setText(resultText ? `\n${theme.fg("error", resultText)}` : "");
 				return text;
 			}

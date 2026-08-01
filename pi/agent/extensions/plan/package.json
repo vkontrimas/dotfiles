@@ -1,11 +1,9 @@
 {
-  "name": "pi-tasks",
+  "name": "pi-plan",
   "private": true,
   "type": "module",
-  "main": "./index.ts",
-  "exports": "./index.ts",
-  "dependencies": {
-    "diff": "^5.1.0"
+  "optionalDependencies": {
+    "pi-tasks": "file:../tasks"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "^0.83.0",
@@ -16,8 +14,5 @@
     "extensions": [
       "./index.ts"
     ]
-  },
-  "devDependencies": {
-    "@types/diff": "^5.2.3"
   }
 }

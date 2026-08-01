@@ -98,12 +98,26 @@ interface Task {
 	// What was actually observed, supplied by complete_task. Distinct from the
 	// criterion above so a completed task shows the claim and the proof.
 	completedEvidence?: string;
+	// Set by cancel_task: the task no longer applies. Distinct from `done` —
+	// a cancelled task is excluded from reminders/counts like a done one, but
+	// renders with its own marker instead of a checkmark.
+	cancelled?: boolean;
+	cancelledReason?: string;
+}
+
+// A task no longer needs action — either finished or cancelled. Used
+// everywhere "remaining"/"pending" is computed, so cancelled tasks drop out
+// of reminders and counts the same way done ones do, without being deleted.
+function isOpen(t: Task): boolean {
+	return !t.done && !t.cancelled;
 }
 
 interface TasksBannerData {
 	content: string;
-	// Optional checklist rendered below `content` with themed ✓/✗ markers.
+	// Optional checklist rendered below `content` with themed ✓/✗/⊘ markers.
 	tasks?: Task[];
+	// Optional line rendered after the checklist (e.g. the /tasks-clear nudge).
+	footer?: string;
 }
 
 interface TasksContinueDetails {
@@ -114,6 +128,7 @@ interface TasksContinueDetails {
 interface Stats {
 	addCalls: number;
 	completeCalls: number;
+	cancelCalls: number;
 	tasksCreated: number;
 	remindersSent: number;
 	autoContinues: number;
@@ -126,6 +141,7 @@ function newStats(): Stats {
 	return {
 		addCalls: 0,
 		completeCalls: 0,
+		cancelCalls: 0,
 		tasksCreated: 0,
 		remindersSent: 0,
 		autoContinues: 0,
@@ -146,10 +162,12 @@ function newStats(): Stats {
 function renderTaskLines(theme: Theme, tasks: Task[], showEvidence = false): string {
 	return tasks
 		.map((t) => {
-			const line = `${t.done ? theme.fg("success", "✓") : theme.fg("muted", "✗")} ${t.text}`;
-			return showEvidence && t.done && t.completedEvidence
-				? `${line}\n  ${theme.fg("muted", t.completedEvidence)}`
-				: line;
+			const marker = t.cancelled ? theme.fg("muted", "⊘") : t.done ? theme.fg("success", "✓") : theme.fg("muted", "✗");
+			const line = `${marker} ${t.text}`;
+			if (!showEvidence) return line;
+			if (t.cancelled && t.cancelledReason) return `${line}\n  ${theme.fg("muted", t.cancelledReason)}`;
+			if (t.done && t.completedEvidence) return `${line}\n  ${theme.fg("muted", t.completedEvidence)}`;
+			return line;
 		})
 		.join("\n");
 }
@@ -168,7 +186,7 @@ function renderTaskLines(theme: Theme, tasks: Task[], showEvidence = false): str
 // tokens.
 function renderPendingChecklistForModel(tasks: Task[]): string {
 	return tasks
-		.filter((t) => !t.done)
+		.filter(isOpen)
 		.map((t) => `- [ ] ${t.id} ${t.text}${t.evidence ? ` — evidence: ${t.evidence}` : ""}`)
 		.join("\n");
 }
@@ -185,7 +203,7 @@ function renderPendingChecklistForModel(tasks: Task[]): string {
 // lines, so the diff was just the new tasks with a `+` — which renderResult
 // already lists directly.
 function buildTasksDiff(oldTasks: Task[], newTasks: Task[]): string {
-	const toLine = (t: Task) => `[${t.done ? "x" : " "}] ${t.text}`;
+	const toLine = (t: Task) => `[${t.cancelled ? "-" : t.done ? "x" : " "}] ${t.text}`;
 	const oldText = oldTasks.map(toLine).join("\n");
 	const newText = newTasks.map(toLine).join("\n");
 	const parts = diffLines(oldText, newText);
@@ -221,31 +239,79 @@ const REMINDER_EVERY_N_TURNS = 5;
 // so a genuinely stuck model doesn't spin forever without the user noticing.
 const MAX_STALLED_CONTINUES = 3;
 
-export default function (pi: ExtensionAPI): void {
-	let tasks: Task[] = [];
-	let nextId = 1;
-	let turnsSinceReminder = 0;
-	let lastContinueSignature: string | null = null;
-	let stalledContinues = 0;
-	let totalTurns = 0;
-	let lastActivityTurn: number | null = null;
-	let blockedReason: string | null = null;
-	let blockedIds: string[] = [];
-	// Set by /tasks-clear, consumed by the next `context` event.
-	let clearedNotice = false;
-	const stats = newStats();
+// Module-scope state (rather than closed over inside the default-exported
+// function) so `getTaskCounts`/`clearAllTasks` below can be imported and
+// called directly by other extensions (e.g. `plan`) and see/affect the same
+// live list — not a second, independent instance's empty state.
+let tasks: Task[] = [];
+let nextId = 1;
+let turnsSinceReminder = 0;
+let lastContinueSignature: string | null = null;
+let stalledContinues = 0;
+let lastActivityTurn: number | null = null;
+let blockedReason: string | null = null;
+let blockedIds: string[] = [];
+// Set by /tasks-clear (or clearAllTasks), consumed by the next `context` event.
+let clearedNotice = false;
+// Set once the default-exported function runs, so clearAllTasks — called
+// from outside, without its own `pi` — can still persist entries correctly.
+let piRef: ExtensionAPI | null = null;
 
-	// Live "tasks done/total" in the footer status bar. The list is the one bit
-	// of state the user otherwise has to run /tasks to see, and the footer shows
-	// it continuously for zero context. Cleared when no list is active.
-	const updateStatus = (ctx: ExtensionContext) => {
-		if (tasks.length === 0) {
-			ctx.ui.setStatus("tasks", undefined);
-			return;
-		}
-		const done = tasks.filter((t) => t.done).length;
-		ctx.ui.setStatus("tasks", `tasks ${done}/${tasks.length}`);
-	};
+// Live "tasks done/total" in the footer status bar. The list is the one bit
+// of state the user otherwise has to run /tasks to see, and the footer shows
+// it continuously for zero context. Cleared when no list is active.
+function updateStatus(ctx: ExtensionContext): void {
+	if (tasks.length === 0) {
+		ctx.ui.setStatus("tasks", undefined);
+		return;
+	}
+	const done = tasks.length - tasks.filter(isOpen).length;
+	ctx.ui.setStatus("tasks", `tasks ${done}/${tasks.length}`);
+}
+
+// Current open/total counts — for other extensions (e.g. `plan`) deciding
+// whether a list needs clearing before starting new work.
+export function getTaskCounts(): { total: number; remaining: number } {
+	return { total: tasks.length, remaining: tasks.filter(isOpen).length };
+}
+
+// Clears the list exactly like the `/tasks-clear` command does — same reset,
+// same persisted marker, same visible transcript banner — so other
+// extensions get one real, shared implementation instead of a re-derived
+// approximation. Returns false (no-op) if there's nothing to clear or this
+// module hasn't been loaded as a Pi extension yet (no `piRef`).
+export function clearAllTasks(ctx: ExtensionContext): boolean {
+	if (!piRef || tasks.length === 0) return false;
+
+	tasks = [];
+	nextId = 1;
+	turnsSinceReminder = 0;
+	lastActivityTurn = null;
+	stalledContinues = 0;
+	lastContinueSignature = null;
+	blockedReason = null;
+	blockedIds = [];
+	clearedNotice = true;
+
+	// Persist the clear so it survives /reload, /resume, and /tree — otherwise
+	// reconstructTasks would just replay the old list back from the last
+	// add_tasks/complete_task/cancel_task results.
+	piRef.appendEntry("tasks-cleared", {});
+	// A visible boundary in the transcript — without this, scrolling back
+	// shows the old task blocks running straight into whatever comes next
+	// with no marker that a clear happened at all.
+	piRef.appendEntry<TasksBannerData>("tasks-banner", { content: "Tasks cleared." });
+
+	updateStatus(ctx);
+	return true;
+}
+
+export type { Task };
+
+export default function (pi: ExtensionAPI): void {
+	piRef = pi;
+	let totalTurns = 0;
+	const stats = newStats();
 
 	const recordActivity = () => {
 		if (lastActivityTurn !== null) {
@@ -265,6 +331,7 @@ export default function (pi: ExtensionAPI): void {
 		nextId = 1;
 		stats.addCalls = 0;
 		stats.completeCalls = 0;
+		stats.cancelCalls = 0;
 		stats.tasksCreated = 0;
 
 		for (const entry of ctx.sessionManager.getBranch()) {
@@ -285,11 +352,12 @@ export default function (pi: ExtensionAPI): void {
 				nextId = tasks.length + 1;
 				stats.tasksCreated += details.added.length;
 				stats.addCalls++;
-			} else if (msg.toolName === "complete_task") {
+			} else if (msg.toolName === "complete_task" || msg.toolName === "cancel_task") {
 				const details = msg.details as { task?: Task } | undefined;
 				if (!details?.task) continue;
 				tasks = tasks.map((t) => (t.id === details.task!.id ? details.task! : t));
-				stats.completeCalls++;
+				if (msg.toolName === "complete_task") stats.completeCalls++;
+				else stats.cancelCalls++;
 			}
 		}
 
@@ -317,6 +385,9 @@ export default function (pi: ExtensionAPI): void {
 		box.addChild(new Markdown(data.content, 0, 0, getMarkdownTheme()));
 		if (data.tasks?.length) {
 			box.addChild(new Text(`\n${renderTaskLines(theme, data.tasks, true)}`, 0, 0));
+		}
+		if (data.footer) {
+			box.addChild(new Text(`\n${theme.fg("muted", data.footer)}`, 0, 0));
 		}
 		return box;
 	});
@@ -348,7 +419,7 @@ export default function (pi: ExtensionAPI): void {
 				return;
 			}
 
-			const remaining = tasks.filter((t) => !t.done).length;
+			const remaining = tasks.filter(isOpen).length;
 			const done = tasks.length - remaining;
 
 			pi.appendEntry<TasksBannerData>("tasks-banner", {
@@ -358,35 +429,16 @@ export default function (pi: ExtensionAPI): void {
 		},
 	});
 
-	// /tasks-clear — drop the list, and tell the model it's gone
+	// /tasks-clear — drop the list, and tell the model it's gone. Delegates to
+	// clearAllTasks so this command and other extensions (e.g. `plan`'s
+	// auto-clear) share one real implementation instead of two copies.
 	pi.registerCommand("tasks-clear", {
 		description: "Clear the current task list",
 		handler: async (_args, ctx) => {
-			if (tasks.length === 0) {
+			if (!clearAllTasks(ctx)) {
 				ctx.ui.notify("No tasks to clear.", "info");
 				return;
 			}
-
-			tasks = [];
-			nextId = 1;
-			turnsSinceReminder = 0;
-			lastActivityTurn = null;
-			stalledContinues = 0;
-			lastContinueSignature = null;
-			blockedReason = null;
-			blockedIds = [];
-			// The add_tasks calls and past reminders are still sitting in history,
-			// so dropping the list here isn't enough — without a word, the model
-			// just keeps working the list it can still read. Queued for the next
-			// LLM call rather than sent now, so clearing still doesn't start a turn.
-			clearedNotice = true;
-
-			// Persist the clear so it survives /reload, /resume, and /tree —
-			// otherwise reconstructTasks would just replay the old list back from
-			// the last add_tasks/complete_task results.
-			pi.appendEntry("tasks-cleared", {});
-
-			updateStatus(ctx);
 			ctx.ui.notify("Tasks cleared.", "info");
 		},
 	});
@@ -400,7 +452,7 @@ export default function (pi: ExtensionAPI): void {
 			const minGap = gaps.length ? Math.min(...gaps) : "n/a";
 			const maxGap = gaps.length ? Math.max(...gaps) : "n/a";
 
-			const remaining = tasks.filter((t) => !t.done).length;
+			const remaining = tasks.filter(isOpen).length;
 			const done = tasks.length - remaining;
 
 			const lines = [
@@ -409,6 +461,7 @@ export default function (pi: ExtensionAPI): void {
 				`- Current list: ${tasks.length} tasks (${done} done, ${remaining} remaining)`,
 				`- add_tasks calls: ${stats.addCalls} (${stats.tasksCreated} tasks created)`,
 				`- complete_task calls: ${stats.completeCalls}`,
+				`- cancel_task calls: ${stats.cancelCalls}`,
 				`- Turns between updates — avg: ${avgGap}, min: ${minGap}, max: ${maxGap} (n=${gaps.length})`,
 				`- System reminders injected mid-task: ${stats.remindersSent}`,
 				`- Auto-continues on stop: ${stats.autoContinues} resumed, ${stats.stallGiveUps} gave up (stalled), ${stats.blockedStops} stopped (blocked)`,
@@ -465,7 +518,7 @@ export default function (pi: ExtensionAPI): void {
 			recordActivity();
 			updateStatus(ctx);
 
-			const remaining = tasks.filter((t) => !t.done).length;
+			const remaining = tasks.filter(isOpen).length;
 
 			return {
 				content: [
@@ -517,7 +570,7 @@ export default function (pi: ExtensionAPI): void {
 			const details = result.details as { tasks?: Task[]; added?: Task[] } | undefined;
 			const all = details?.tasks ?? [];
 			const added = details?.added ?? [];
-			const remaining = all.filter((t) => !t.done).length;
+			const remaining = all.filter(isOpen).length;
 			const done = all.length - remaining;
 
 			let output = `${theme.fg("toolTitle", theme.bold("add_tasks"))} ${theme.fg("accent", `(+${added.length}, ${done}/${all.length} done)`)}`;
@@ -559,6 +612,9 @@ export default function (pi: ExtensionAPI): void {
 			if (tasks[idx].done) {
 				throw new Error(`Task ${params.id} ("${tasks[idx].text}") is already marked done.`);
 			}
+			if (tasks[idx].cancelled) {
+				throw new Error(`Task ${params.id} ("${tasks[idx].text}") was cancelled and can't be completed.`);
+			}
 
 			const prevTasks = tasks;
 			const updated: Task = { ...tasks[idx], done: true, completedEvidence: params.evidence };
@@ -568,7 +624,7 @@ export default function (pi: ExtensionAPI): void {
 			updateStatus(ctx);
 
 			const diff = buildTasksDiff(prevTasks, tasks);
-			const remaining = tasks.filter((t) => !t.done).length;
+			const remaining = tasks.filter(isOpen).length;
 
 			return {
 				content: [
@@ -611,7 +667,7 @@ export default function (pi: ExtensionAPI): void {
 
 			const details = result.details as { tasks?: Task[]; diff?: string; task?: Task } | undefined;
 			const all = details?.tasks ?? [];
-			const remaining = all.filter((t) => !t.done).length;
+			const remaining = all.filter(isOpen).length;
 			const done = all.length - remaining;
 			const completed = details?.task;
 
@@ -619,6 +675,103 @@ export default function (pi: ExtensionAPI): void {
 
 			if (completed?.completedEvidence) {
 				output += `\n${theme.fg("success", "✓")} ${completed.text}\n  ${theme.fg("muted", completed.completedEvidence)}`;
+			}
+
+			if (details?.diff) {
+				output += `\n\n${renderDiff(details.diff)}`;
+			}
+
+			text.setText(output);
+			return text;
+		},
+	});
+
+	pi.registerTool({
+		name: "cancel_task",
+		label: "Cancel Task",
+		description:
+			"Mark a tracked task cancelled because it no longer applies — not because it's done, and not " +
+			"because you're stuck. The task stays visible with its reason instead of being removed.",
+		promptSnippet: "Mark a tracked task cancelled because it no longer applies",
+		promptGuidelines: [
+			"Use cancel_task when a task turns out unnecessary — the requirement changed, an earlier task already covered it, or research showed it isn't needed. Don't use it to give up on a task you just haven't finished yet; that's still open work.",
+			"cancel_task is not a substitute for tasks_blocked: cancel a task that no longer needs doing; call tasks_blocked when you can't proceed on a task that still needs doing.",
+			"`reason` is shown to the user, so state specifically why the task no longer applies.",
+		],
+		parameters: Type.Object({
+			id: Type.String({ description: "ID of the task to cancel, as returned by add_tasks" }),
+			reason: Type.String({ description: "Why this task no longer applies." }),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			const idx = tasks.findIndex((t) => t.id === params.id);
+			if (idx === -1) {
+				const ids = tasks.map((t) => t.id).join(", ") || "(none)";
+				throw new Error(`No task with id "${params.id}". Current ids: ${ids}`);
+			}
+			if (tasks[idx].done) {
+				throw new Error(`Task ${params.id} ("${tasks[idx].text}") is already marked done and can't be cancelled.`);
+			}
+			if (tasks[idx].cancelled) {
+				throw new Error(`Task ${params.id} ("${tasks[idx].text}") is already cancelled.`);
+			}
+
+			const prevTasks = tasks;
+			const updated: Task = { ...tasks[idx], cancelled: true, cancelledReason: params.reason };
+			tasks = tasks.map((t, i) => (i === idx ? updated : t));
+			stats.cancelCalls++;
+			recordActivity();
+			updateStatus(ctx);
+
+			const diff = buildTasksDiff(prevTasks, tasks);
+			const remaining = tasks.filter(isOpen).length;
+
+			return {
+				content: [
+					{
+						type: "text" as const,
+						text:
+							`Cancelled ${updated.id} — ${updated.text} (${params.reason}). ` +
+							`(${tasks.length - remaining}/${tasks.length} resolved, ${remaining} remaining)`,
+					},
+				],
+				details: { tasks, diff, task: updated },
+			};
+		},
+		renderCall(args, theme, context) {
+			const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+
+			if (!context.isPartial) {
+				text.setText("");
+				return text;
+			}
+
+			const id = typeof (args as { id?: unknown } | undefined)?.id === "string" ? (args as { id: string }).id : "";
+			const label = id ? (tasks.find((t) => t.id === id)?.text ?? "") : "";
+			text.setText(`${theme.fg("toolTitle", theme.bold("cancel_task"))} ${theme.fg("accent", label)}`);
+			return text;
+		},
+		renderResult(result, _options, theme, context) {
+			const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+
+			if (context.isError) {
+				const output = result.content
+					.filter((c) => c.type === "text")
+					.map((c) => c.text || "")
+					.join("\n");
+				text.setText(output ? theme.fg("error", output) : "");
+				return text;
+			}
+
+			const details = result.details as { tasks?: Task[]; diff?: string; task?: Task } | undefined;
+			const all = details?.tasks ?? [];
+			const remaining = all.filter(isOpen).length;
+			const resolved = all.length - remaining;
+			const cancelled = details?.task;
+
+			let output = `${theme.fg("toolTitle", theme.bold("cancel_task"))} ${theme.fg("accent", `(${resolved}/${all.length} resolved)`)}`;
+
+			if (cancelled?.cancelledReason) {
+				output += `\n${theme.fg("muted", "⊘")} ${cancelled.text}\n  ${theme.fg("muted", cancelled.cancelledReason)}`;
 			}
 
 			if (details?.diff) {
@@ -683,6 +836,21 @@ export default function (pi: ExtensionAPI): void {
 		totalTurns++;
 	});
 
+	// Surfaces the current list plus a manual-clear nudge whenever the agent
+	// stops with tasks still open or done — the only other ways to see the
+	// list are /tasks (which the user has to think to run) or the footer
+	// status bar (which shows a count, not the reasons/cancellations).
+	const showTasksNudge = () => {
+		if (tasks.length === 0) return;
+		const remaining = tasks.filter(isOpen).length;
+		const done = tasks.length - remaining;
+		pi.appendEntry<TasksBannerData>("tasks-banner", {
+			content: `**Tasks** (${done}/${tasks.length} done, ${remaining} remaining)`,
+			tasks,
+			footer: "/tasks-clear to clear, plan clears automatically",
+		});
+	};
+
 	const systemReminder = (text: string) => ({
 		role: "user" as const,
 		timestamp: Date.now(),
@@ -705,7 +873,7 @@ export default function (pi: ExtensionAPI): void {
 			);
 		}
 
-		const remaining = tasks.filter((t) => !t.done).length;
+		const remaining = tasks.filter(isOpen).length;
 		// Nothing pending means nothing to remind about — the reminder lists only
 		// pending tasks, so with an all-done list it would just be a header.
 		if (remaining > 0 && turnsSinceReminder >= REMINDER_EVERY_N_TURNS) {
@@ -737,7 +905,10 @@ export default function (pi: ExtensionAPI): void {
 		// Leave the list and the stall counters untouched, so whenever the user
 		// does resume, the loop picks up exactly where it was.
 		const lastAssistant = [...event.messages].reverse().find((m) => m.role === "assistant");
-		if (lastAssistant?.stopReason === "aborted") return;
+		if (lastAssistant?.stopReason === "aborted") {
+			showTasksNudge();
+			return;
+		}
 
 		if (blockedReason) {
 			stats.blockedStops++;
@@ -750,10 +921,11 @@ export default function (pi: ExtensionAPI): void {
 			return;
 		}
 
-		const remaining = tasks.filter((t) => !t.done).length;
+		const remaining = tasks.filter(isOpen).length;
 		if (remaining === 0) {
 			stalledContinues = 0;
 			lastContinueSignature = null;
+			showTasksNudge();
 			return;
 		}
 
