@@ -37,7 +37,6 @@ export default function (pi: ExtensionAPI) {
   let lastMessages: Message[] = [];
   let turnsSinceSummary = 0;
   let summarizedOnce = false;
-  let inFlight = false;
   let currentSummary: string | undefined;
 
   const buildWorkingMessage = (): string => {
@@ -106,16 +105,22 @@ export default function (pi: ExtensionAPI) {
     }
   };
 
-  pi.on("turn_end", (_event, ctx) => {
+  pi.on("turn_end", async (_event, ctx) => {
     refreshWorkingMessage(ctx); // picks up latest task counts every turn regardless of summary cadence
 
     turnsSinceSummary++;
     const due = !summarizedOnce || turnsSinceSummary >= SUMMARY_INTERVAL_TURNS;
-    if (!due || inFlight) return;
+    if (!due) return;
     turnsSinceSummary = 0;
     summarizedOnce = true;
-    inFlight = true;
-    requestSummary(ctx).finally(() => { inFlight = false; });
+    // Awaited (not fire-and-forget): pi awaits turn_end handlers before the
+    // next turn's request goes out, so this guarantees the summary call
+    // never overlaps with a real generation request. The local llama.cpp
+    // backend runs a single inference slot (-np 1) and doesn't tolerate
+    // concurrent connections cleanly — overlapping requests were observed
+    // causing intermittent "write: broken pipe" 500s from bifrost (stale
+    // pooled connection reused while the slot was mid-generation).
+    await requestSummary(ctx);
   });
 
   pi.on("agent_settled", (_event, ctx) => {
