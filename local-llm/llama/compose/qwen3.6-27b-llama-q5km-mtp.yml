@@ -96,6 +96,14 @@ services:
       # read-only bind mount, and Docker can't create a mountpoint node for
       # a second file-level bind mount inside an already-read-only parent.
       - /home/kinetic/data/llm-models/qwen3.6-27b-gguf/unsloth-mtp-q4km/mmproj-F16.gguf:/mmproj/mmproj-F16.gguf:ro
+      # Writable — required by --slot-save-path below. Under normal
+      # operation this stays effectively empty: seqagent erases a
+      # subagent's slot right after it exits (pi/agent/extensions/seqagent/
+      # index.ts) before --cache-idle-slots' idle scan ever gets a chance to
+      # snapshot it, so nothing gets written here in the common case. Kept
+      # host-side rather than tmpfs so a genuine parent-conversation
+      # snapshot (if one is ever explicitly saved) survives a restart.
+      - /home/kinetic/data/llm-slot-cache/qwen3.6-27b-q5km-mtp:/slot-cache
     deploy:
       resources:
         reservations:
@@ -159,6 +167,17 @@ services:
       # Box has 46GB RAM (~38GB available), so 16GB is comfortable.
       - --cache-ram
       - "16384"
+      # Unlocks POST /slots/{id}?action=erase (confirmed: without this flag
+      # the endpoint 501s). Used by seqagent's erase-on-subagent-exit fix
+      # (pi/agent/extensions/seqagent/index.ts, toggle via
+      # /seqagent-llama-cache-fix) to wipe a subagent's slot before
+      # --cache-idle-slots' idle scan can snapshot it into the --cache-ram
+      # FIFO above — that snapshotting was evicting the main agent's own
+      # cache entry and forcing a ~163K-token full reprefill (found
+      # 2026-08-01). We only ever use the erase action; save/restore come
+      # along for free since they're gated behind the same flag.
+      - --slot-save-path
+      - /slot-cache
       - -ctk
       - q8_0
       - -ctv

@@ -4,3 +4,4 @@ agent/sessions/
 agent/npm/
 agent/models-store.json
 agent/*.jsonl
+agent/extensions/seqagent/llama-cache-fix-state.json

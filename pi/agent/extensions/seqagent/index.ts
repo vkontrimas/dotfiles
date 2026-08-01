@@ -25,6 +25,84 @@ import { type AgentConfig, discoverAgents } from "./agents.ts";
 
 const RUNNING_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
+// ── llama.cpp subagent slot-cache fix ───────────────────────────────────────
+// The server (local-llm/llama/compose/qwen3.6-27b-llama-q5km-mtp.yml) runs a
+// single slot (-np 1) with --cache-ram: a host-RAM FIFO cache that snapshots
+// the idle slot's KV state on every handoff so the parent session doesn't
+// need a full reprefill when it resumes. Subagent snapshots pile into that
+// same FIFO and can evict the parent's own entry before it's ever reused
+// (observed: a ~163K-token full reprefill). Since subagents are one-shot and
+// never resumed, erasing the slot right after a subagent exits — before the
+// server's idle-scan can snapshot it — keeps it out of the cache entirely.
+// Toggle via /seqagent-llama-cache-fix; state persists across sessions.
+
+const LLAMA_SLOT_BASE_URL = "http://localhost:11434"; // direct to llama-server; Bifrost (:11435) can't forward /slots/*
+const LLAMA_SLOT_ID = 0; // server runs -np 1 — only ever one slot
+const LLAMA_ERASE_TIMEOUT_MS = 2000;
+// The only model actually served by the --slot-save-path-patched llama.cpp
+// config (qwen3.6-27b-llama-q5km-mtp.yml). Other entries in models.json that
+// also resolve to :11434/:11435 (bonsai-ternary-27b, qwen3.6-27b-autoround —
+// the latter is a *real* vLLM engine, not llama.cpp, when its stack is
+// toggled active) run different containers/engines that don't support
+// /slots at all — matched by substring since agent.model/currentModel can
+// come through as e.g. "vllm/qwen3.6-27b-q5km-mtp" (direct) or
+// "bifrost/vllm/qwen3.6-27b-q5km-mtp" (via gateway).
+const LLAMA_LOCAL_MODEL_ID = "qwen3.6-27b-q5km-mtp";
+const CACHE_FIX_STATE_FILE = path.join(__dirname, "llama-cache-fix-state.json");
+
+function loadCacheFixState(): boolean {
+  try {
+    const raw = fs.readFileSync(CACHE_FIX_STATE_FILE, "utf-8");
+    const parsed = JSON.parse(raw);
+    if (typeof parsed.enabled === "boolean") return parsed.enabled;
+  } catch {
+    // missing/corrupt/unreadable — fall through to default
+  }
+  return true; // default on
+}
+
+let cacheFixEnabled = loadCacheFixState();
+
+async function saveCacheFixState(enabled: boolean): Promise<void> {
+  try {
+    await withFileMutationQueue(CACHE_FIX_STATE_FILE, () =>
+      fs.promises.writeFile(
+        CACHE_FIX_STATE_FILE,
+        JSON.stringify({ enabled }),
+        { encoding: "utf-8", mode: 0o600 },
+      ),
+    );
+  } catch {
+    // best-effort; in-memory state still reflects the toggle for this process
+  }
+}
+
+// Erases the (only) llama.cpp slot so a just-finished subagent's KV state
+// never gets snapshotted into --cache-ram. Must never throw, hang, or block
+// seqagent's orchestration — swallows an offline/unreachable server, a
+// timeout, or a non-2xx response (e.g. if --slot-save-path isn't set)
+// silently, since this is a best-effort optimization, not a required step.
+async function eraseSubagentSlot(model: string | undefined): Promise<void> {
+  if (!cacheFixEnabled) return;
+  if (process.env.SEQAGENT_SUBAGENT === "1") return; // only the parent process does this
+  if (!model || !model.includes(LLAMA_LOCAL_MODEL_ID)) return; // not the patched llama-server
+  if (process.env.SEQAGENT_DEBUG_ERASE) console.error(`[seqagent] erasing slot for model=${model}`);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), LLAMA_ERASE_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${LLAMA_SLOT_BASE_URL}/slots/${LLAMA_SLOT_ID}?action=erase`, {
+      method: "POST",
+      signal: controller.signal,
+    });
+    if (process.env.SEQAGENT_DEBUG_ERASE) console.error(`[seqagent] erase response status=${res.status} body=${await res.text()}`);
+  } catch (err) {
+    if (process.env.SEQAGENT_DEBUG_ERASE) console.error(`[seqagent] erase failed: ${err}`);
+    // server offline, connection refused, DNS failure, timeout — all fine to ignore
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 interface StepResult {
   agent: string;
   task: string;
@@ -218,6 +296,9 @@ async function runAgent({ agent, task, cwd, signal, onUpdate, currentModel }: Ru
   } finally {
     try { if (tmpFile) await fs.promises.unlink(tmpFile); } catch { /* */ }
     try { if (tmpDir) await fs.promises.rm(tmpDir, { force: true }); } catch { /* */ }
+    if (process.env.SEQAGENT_SUBAGENT !== "1") {
+      await eraseSubagentSlot(model);
+    }
   }
 }
 
@@ -231,6 +312,24 @@ const TaskItem = Type.Object({
 export default function (pi: ExtensionAPI) {
   const agents = discoverAgents();
   const agentList = agents.map((a) => `${a.name}: ${a.description}`).join("; ");
+
+  pi.registerCommand("seqagent-llama-cache-fix", {
+    description:
+      "Toggle erasing a subagent's llama.cpp slot after it finishes, to protect the " +
+      "parent conversation's KV cache entry (on/off/toggle; no arg toggles)",
+    handler: async (args, ctx) => {
+      const arg = args.trim().toLowerCase();
+      if (arg === "on") cacheFixEnabled = true;
+      else if (arg === "off") cacheFixEnabled = false;
+      else if (arg === "" || arg === "toggle") cacheFixEnabled = !cacheFixEnabled;
+      else {
+        ctx.ui.notify("Usage: /seqagent-llama-cache-fix [on|off|toggle]", "warning");
+        return;
+      }
+      await saveCacheFixState(cacheFixEnabled);
+      ctx.ui.notify(`Subagent slot-erase fix ${cacheFixEnabled ? "enabled" : "disabled"}.`, "info");
+    },
+  });
 
   pi.registerTool({
     name: "seqagent",
