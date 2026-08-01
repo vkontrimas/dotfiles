@@ -20,15 +20,24 @@
  * anchor — that case falls back to appending, so the block is never silently
  * dropped.
  *
- * The style is deliberately *not* caveman-speak. The popular caveman skill
- * compresses by mangling the writing — dropping articles, using fragments,
- * inventing abbreviations — and its own docs concede the token savings are
- * far smaller than advertised once input tokens and the skill's own overhead
- * are counted. Anthropic argues the opposite directly in the current Claude
- * Code prompt: readable and concise are different things, and readable matters
- * more, because a summary the user has to reread has spent whatever brevity
- * saved. So this shortens by *dropping details that wouldn't change what the
- * reader does next*, and bans shortening words.
+ * The register is telegraphic — fragments, dropped articles, dropped subject
+ * pronouns — but two of caveman's habits are still banned: invented
+ * abbreviations (cfg, impl, fn) and arrow chains (A -> B -> fails). The
+ * tokenizer splits those the same as the full word, so they save nothing and
+ * cost the reader a decode. They were never the part of caveman that was
+ * concise.
+ *
+ * What the register is worth was measured, not guessed. Sampling 300 requests
+ * from the local bifrost log (85 carrying assistant prose, qwen3.6-27b): 60%
+ * contained "Let me", 65% ended in a trailing colon, and 88% were under 200
+ * chars. Nearly all of that volume was one shape — a wind-up narrating the
+ * tool call about to happen ("Now let me run the test suite to check all
+ * fixes:"). An earlier revision of this block caused it: it licensed "one
+ * sentence before your first tool call", which the model applied to every tool
+ * call, and simultaneously banned fragments, which forced each of those into a
+ * full grammatical sentence. So the rule now targets the wind-up rather than
+ * the act — "Running suite." is fine, and the banned-opener list is literal
+ * because that is what actually catches.
  *
  * The block is kept short on purpose, and that constraint is Pi's, not a
  * guess. Pi's whole system prompt and tool definitions together come in under
@@ -44,19 +53,20 @@
  *   - The carve-outs (security, destructive actions, a confused user) — what
  *     makes a terse style safe to leave always-on, since otherwise the model
  *     compresses exactly where ambiguity costs most.
- *   - One bad/good pair. Enumerated bad examples at realistic length are what
- *     a model pattern-matches against; one earns its tokens, five don't.
+ *   - Two bad/good pairs. Bad examples at realistic length are what a model
+ *     pattern-matches against; the second covers the tool-call wind-up, which
+ *     the measurement above makes the dominant failure by a wide margin.
  *
  * Everything else — that headers are optional, that bullets shouldn't nest —
  * the model already knows.
  *
- * Beyond that, a `<system-reminder>` is injected every N turns (default 20,
+ * Beyond that, a `<system-reminder>` is injected every N turns (default 10,
  * `PI_CONCISE_EVERY` to change it). Style instructions decay over a long
  * context — this is the standard fix, and it's the same mechanism the `tasks`
  * extension uses for its checklist. It goes through the `context` event, so
  * it's visible to the model on exactly one LLM call and never written to the
  * session log or shown in the UI. It's deliberately terse: it re-anchors the
- * contract, it doesn't restate it. Once every 20 turns is rare on purpose —
+ * contract, it doesn't restate it. Once every 10 turns is rare on purpose —
  * the system prompt is the primary instruction, and a reminder frequent enough
  * to notice is frequent enough to start reading as nagging to the model.
  *
@@ -69,7 +79,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 // Turns between reminders. Rare on purpose — see the header comment. Override
 // with PI_CONCISE_EVERY; 0 or negative disables reminders entirely, leaving
 // just the system-prompt block.
-const DEFAULT_REMINDER_EVERY_N_TURNS = 20;
+const DEFAULT_REMINDER_EVERY_N_TURNS = 10;
 
 const REMINDER_EVERY_N_TURNS = (() => {
 	const raw = process.env.PI_CONCISE_EVERY;
@@ -84,27 +94,35 @@ const REMINDER_EVERY_N_TURNS = (() => {
 const GUIDELINES_ANCHOR = "\n\nGuidelines:\n";
 
 const CONCISE_BLOCK = `<output_style>
-Lead with the outcome: the first sentence says what happened or what you found.
+Outcome first. Fragments over sentences — drop articles, drop "I", drop filler verbs.
 
-Cut preamble ("Sure!", "Great question", "Let me explain", "Based on the information provided"), postamble (summarizing edits the user just watched you make), framing ("Here is the content of...", "The answer is X" — just give X), hedging ("perhaps", "it seems like", "you might want to consider"), restating the question, and narrating tool calls before you make them.
+Status lines are one fragment, or nothing. Saying what comes next is fine, the wind-up isn't: "Running suite." "Grepping callers." "12 fails, all @copy classify." Never open with "Let me", "Now let me", "I'll", "Let's", or an acknowledgment ("Good", "Perfect", "Found it", "All tests pass!"). No trailing colon before a tool call.
 
-Keep exact error strings, file_path:line_number, and the reason why when the fix is not obvious. One sentence before your first tool call, and one at each blocker or change of direction — brief is good, silent is not.
+Cut preamble ("Sure!", "Great question", "Based on the information provided"), framing ("Here is the report", "The answer is X" — give X), hedging ("perhaps", "seems like", "you might want to consider"), restating the question.
 
-Shorten by dropping details that would not change what the reader does next, never by shortening words: no fragments, no dropped articles, no invented abbreviations, no arrow chains.
+Never re-summarize work the user watched: no diff recap, no bold headers, no horizontal rules, no per-file list, no re-pasted code. End of turn is one or two lines — what changed, what's next.
 
-Write at whatever length is needed for security implications, destructive actions, or a user who seems confused — clarity beats brevity. Never announce this style.
+Keep exact error strings, file_path:line_number, and why when the fix isn't obvious. Never invent abbreviations (cfg, impl, fn) or arrow chains (A → B → fails); both cost tokens and cost the reader.
+
+Full prose, full length for security implications, destructive actions, or a confused user — clarity beats brevity there. Never mention this style.
 
 <example>
 user: does the retry wrapper handle 429s?
 BAD: Great question! Let me take a look at the retry logic for you. Looking at the code, I can see that the retry wrapper does indeed appear to handle 429 responses. Here is what I found...
-GOOD: No. retry.ts:34 retries on 5xx only, so 429 falls through to the error path.
+GOOD: No. retry.ts:34 retries 5xx only. 429 falls to the error path.
+</example>
+
+<example>
+[about to grep for callers]
+BAD: Now let me search for where this is called:
+GOOD: Grepping callers.
 </example>
 </output_style>`;
 
 const REMINDER_TEXT =
 	`<system-reminder>\n` +
-	`Stay concise: outcome first, no preamble or postamble, and do not re-summarize ` +
-	`edits the user watched you make. Complete sentences, not fragments.\n` +
+	`Concise. Status lines are one fragment — no "Let me...", no preamble, no recap ` +
+	`of edits the user watched. Outcome first.\n` +
 	`</system-reminder>`;
 
 export default function (pi: ExtensionAPI): void {
