@@ -584,13 +584,14 @@ export default function (pi: ExtensionAPI) {
   if (process.env.SEQAGENT_SUBAGENT === "1") {
     const SUMMARY_INTERVAL_TURNS = 2; // configurable cadence
     const SUMMARY_PROMPT =
-      "In 8 words or fewer, state what you are currently doing or just accomplished, " +
-      "for a live progress display. Respond with only that short phrase — no sentence, " +
-      "no preamble, no markdown, no trailing punctuation.";
-    const KICKOFF_PROMPT =
-      "In 8 words or fewer, state what this task is about, for a live progress display. " +
-      "Respond with only that short phrase — no sentence, no preamble, no markdown, " +
-      "no trailing punctuation.";
+      "8 words max, fragment (drop articles/\"I\"), no hedging (\"let me\", \"I will\"). " +
+      "What are you doing right now?";
+    function buildKickoffPrompt(requestText: string): string {
+      return (
+        "8 words max, fragment (drop articles/\"I\"), no hedging, no greeting. " +
+        `What does this task ask for?\n\nTask: "${requestText}"`
+      );
+    }
 
     let lastMessages: Message[] = [];
     let turnsSinceSummary = 0;
@@ -640,7 +641,7 @@ export default function (pi: ExtensionAPI) {
     // so this stays serialized ahead of it, same as the turn_end summary below.
     // Uses event.prompt directly (the CLI task text) since no context/history exists yet.
     pi.on("before_agent_start", async (event, ctx) => {
-      await requestSummary(ctx, `${event.prompt}\n\n---\n${KICKOFF_PROMPT}`);
+      await requestSummary(ctx, buildKickoffPrompt(event.prompt));
     });
 
     pi.on("turn_end", async (_event, ctx) => {
