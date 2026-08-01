@@ -479,10 +479,9 @@ export default function (pi: ExtensionAPI): void {
 			"edit, reorder, or remove existing tasks. Call it again whenever you discover more work.",
 		promptSnippet: "Add tasks to the tracked to-do list for long-running work",
 		promptGuidelines: [
-			"Use add_tasks to start and grow a to-do list on any job that will span many turns. It only adds — call it again as you discover more work instead of trying to replace the list.",
-			"Give each task a `reason` (why it's needed) and an `evidence` criterion: the specific check that will prove that one task is done — a test to write and run, a command and the output you expect from it.",
-			"Make each criterion checkable the moment that task ends, not after later tasks land. If several tasks all say 'the full suite passes at the end', none of them can be completed until the end, and you'll be stuck reconstructing evidence from memory instead of reporting what you just saw. Split the verification up so each task carries its own.",
-			"This tool assigns each task its ID — use the IDs it returns when calling complete_task. Don't invent your own IDs.",
+			"Use add_tasks on any job that will span many turns. It only appends — call it again as you discover more work.",
+			"Give each task a `reason` (why it's needed) and an `evidence` criterion: the check that proves that one task is done — a test to run, a command and the output you expect.",
+			"Make each criterion checkable the moment that task ends. If several tasks share one 'the full suite passes at the end' criterion, none can be completed until the end and you'll reconstruct evidence from memory instead of reporting what you just saw.",
 		],
 		parameters: Type.Object({
 			tasks: Type.Array(
@@ -591,9 +590,9 @@ export default function (pi: ExtensionAPI): void {
 		description: "Mark a tracked task done, with evidence of what you observed proving it.",
 		promptSnippet: "Mark a tracked task done with evidence",
 		promptGuidelines: [
-			"Run the task's evidence check as its last step, then call complete_task immediately — before starting the next task. Don't batch completions at the end; if a task can't be completed until later work lands, its criterion was written wrong.",
-			"`evidence` = what you actually saw: the command and its output, the test that passed, the file you read back — not what you believe, and not a changelog of what you changed (that belongs in your reply to the user, not here). Believing a task is probably done is rationalizing, not verifying.",
-			"Failing check: fix the issue, don't complete it. Impossible or no-longer-applicable task: call tasks_blocked instead of completing it with an excuse.",
+			"Run the task's evidence check as its last step, then call complete_task before starting the next. Don't batch completions at the end; a task that can't be completed until later work lands had its criterion written wrong.",
+			"`evidence` is what you actually saw, not what you believe. Believing a task is probably done is rationalizing, not verifying.",
+			"Failing check: fix it, don't complete it. Task that no longer applies: cancel_task. Task you can't proceed on: tasks_blocked. Never complete one with an excuse.",
 		],
 		parameters: Type.Object({
 			id: Type.String({ description: "ID of the task to complete, as returned by add_tasks" }),
@@ -694,13 +693,12 @@ export default function (pi: ExtensionAPI): void {
 			"because you're stuck. The task stays visible with its reason instead of being removed.",
 		promptSnippet: "Mark a tracked task cancelled because it no longer applies",
 		promptGuidelines: [
-			"Use cancel_task when a task turns out unnecessary — the requirement changed, an earlier task already covered it, or research showed it isn't needed. Don't use it to give up on a task you just haven't finished yet; that's still open work.",
-			"cancel_task is not a substitute for tasks_blocked: cancel a task that no longer needs doing; call tasks_blocked when you can't proceed on a task that still needs doing.",
-			"`reason` is shown to the user, so state specifically why the task no longer applies.",
+			"Use cancel_task when a task turns out unnecessary — the requirement changed, an earlier task covered it, or research showed it isn't needed. Not for work you just haven't finished; that's still open.",
+			"Cancel what no longer needs doing; call tasks_blocked when you can't proceed on something that still does.",
 		],
 		parameters: Type.Object({
 			id: Type.String({ description: "ID of the task to cancel, as returned by add_tasks" }),
-			reason: Type.String({ description: "Why this task no longer applies." }),
+			reason: Type.String({ description: "Why this task no longer applies. Shown to the user, so be specific." }),
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const idx = tasks.findIndex((t) => t.id === params.id);
@@ -883,9 +881,8 @@ export default function (pi: ExtensionAPI): void {
 			injected.push(
 				systemReminder(
 					`Tasks (${remaining} remaining):\n${renderPendingChecklistForModel(tasks)}\n\n` +
-						`Keep working autonomously, no confirmation needed. As each task ends, run its evidence check and ` +
-						`call complete_task with what you observed — one task at a time, not a batch at the end. Call ` +
-						`add_tasks if you discover more work.`,
+						`Keep working autonomously, no confirmation needed. Complete each task as it ends, with the ` +
+						`evidence you observed. Call add_tasks if you discover more work.`,
 				),
 			);
 		}
@@ -956,10 +953,9 @@ export default function (pi: ExtensionAPI): void {
 				content:
 					`<system-reminder>\n` +
 					`${remaining} task${remaining === 1 ? "" : "s"} not done:\n${list}\n\n` +
-					`Keep going — take the next task, run its evidence check as its last step, and call ` +
-					`\`complete_task\` (id, evidence) with what you observed before starting the one after it. Call ` +
-					`\`add_tasks\` if you discover more work.\n\n` +
-					`Only call \`tasks_blocked\` (reason, ids) iff truly stuck — missing/unobtainable credentials, an ` +
+					`Keep going — take the next task and call \`complete_task\` (id, evidence) before starting the one ` +
+					`after it. Call \`add_tasks\` if you discover more work.\n\n` +
+					`Only call \`tasks_blocked\` (reason, ids) if truly stuck — missing/unobtainable credentials, an ` +
 					`unreachable dependency, contradictory requirements, a decision only a human can make, or an ` +
 					`irreversible action needing authorization. Uncertainty, wanting confirmation, or asking whether ` +
 					`to continue long-running work are not blocks — keep working.\n` +
