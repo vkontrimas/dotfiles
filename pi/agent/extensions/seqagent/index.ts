@@ -383,7 +383,6 @@ export default function (pi: ExtensionAPI) {
       "- Use explore/investigate before planning changes; research for external info; review only for large changes (10+ files, ~10k+ LOC, architectural shifts), scoped to the relevant area rather than 'review everything'",
       "- `worker` is the only agent that can change anything; the rest are read-only, so asking them to edit, delete, or run a build gets you a plan, not the work",
       "- Delegate self-contained work to `worker`: a fix you've already diagnosed, a mechanical refactor, removing a feature, adding tests. Do narrow edits yourself. It has no context from here, so spell out which files, what to do, and how to verify",
-      "- Example: 'add a null guard to auth.ts:42 for the case where token is missing' (already diagnosed) → worker. 'the login endpoint sometimes 500s' (undiagnosed) → investigate first, then worker with its findings",
       "- Batch worker tasks only if they're independent — a later task can't build on an earlier one's output, so staged work (investigate, then fix) needs a second call once you've read the first report",
     ],
     parameters: Type.Object({

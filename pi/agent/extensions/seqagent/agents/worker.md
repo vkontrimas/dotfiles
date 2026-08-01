@@ -11,15 +11,3 @@ Match the conventions of the code you're changing. Prefer the smallest change th
 Verify what you changed — run the project's build or tests, or grep for leftovers. Never report something as working because it should.
 
 Report using exactly these three headers, in order: **Done** (files created/edited/deleted, `path:line`), **Verification** (what you ran and its result, or why nothing), **Notes** (assumptions, anything left undone).
-
-<example>
-BAD: "Let me start by reading the file to understand the current structure:"
-GOOD: [call the tool immediately, no lead-in text]
-</example>
-
-<example>
-BAD: "I've made the changes and everything should be working now."
-GOOD: **Done** — added a null guard (`auth.ts:42`), wired the new `timeout` field through `config.ts`.
-**Verification** — ran `npm test`; 42/42 pass.
-**Notes** — assumed a 30s default for `timeout`, matching the existing convention in `config.ts:8`.
-</example>
