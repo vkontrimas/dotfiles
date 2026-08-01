@@ -29,9 +29,11 @@ try {
 }
 
 const SUMMARY_INTERVAL_TURNS = 4; // configurable cadence
+const SUMMARY_MAX_CHARS = 80;
 const SUMMARY_PROMPT =
-  "In one short sentence, summarize what you are currently doing or just accomplished, " +
-  "for a live progress display. Respond with only that sentence, no preamble or markdown.";
+  "In 8 words or fewer, state what you are currently doing or just accomplished, " +
+  "for a live progress display. Respond with only that short phrase — no sentence, " +
+  "no preamble, no markdown, no trailing punctuation.";
 
 export default function (pi: ExtensionAPI) {
   let lastMessages: Message[] = [];
@@ -46,7 +48,12 @@ export default function (pi: ExtensionAPI) {
       const done = counts.total - counts.remaining;
       parts.push(`${done}/${counts.total} tasks`);
     }
-    if (currentSummary) parts.push(currentSummary);
+    if (currentSummary) {
+      const summary = currentSummary.length > SUMMARY_MAX_CHARS
+        ? currentSummary.slice(0, SUMMARY_MAX_CHARS) + "…"
+        : currentSummary;
+      parts.push(summary);
+    }
     return parts.join(" · ");
   };
 
@@ -87,7 +94,7 @@ export default function (pi: ExtensionAPI) {
       const response = await complete(
         model,
         { systemPrompt: ctx.getSystemPrompt(), messages, tools },
-        { apiKey: auth.apiKey, headers: auth.headers, env: auth.env, reasoning: "off", maxTokens: 60, signal: ctx.signal },
+        { apiKey: auth.apiKey, headers: auth.headers, env: auth.env, reasoning: "off", maxTokens: 32, signal: ctx.signal },
       );
 
       const text = response.content
