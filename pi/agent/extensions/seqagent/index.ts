@@ -15,6 +15,8 @@ import {
   type ExtensionAPI,
   type ExtensionContext,
   getMarkdownTheme,
+  trackDetachedChildPid,
+  untrackDetachedChildPid,
   withFileMutationQueue,
 } from "@earendil-works/pi-coding-agent";
 import { Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
@@ -239,6 +241,7 @@ async function runAgent({ agent, task, cwd, signal, onUpdate, currentModel }: Ru
         cwd, shell: false, stdio: ["ignore", "pipe", "pipe"],
         env: { ...process.env, SEQAGENT_SUBAGENT: "1" },
       });
+      if (proc.pid) trackDetachedChildPid(proc.pid);
       let buf = "";
       let errBuf = "";
       let aborted = false;
@@ -307,11 +310,15 @@ async function runAgent({ agent, task, cwd, signal, onUpdate, currentModel }: Ru
         for (const l of lines) parseErrLine(l);
       });
       proc.on("close", (code) => {
+        if (proc.pid) untrackDetachedChildPid(proc.pid);
         if (buf.trim()) parse(buf);
         if (errBuf.trim()) parseErrLine(errBuf);
         resolve(code ?? 0);
       });
-      proc.on("error", () => resolve(1));
+      proc.on("error", () => {
+        if (proc.pid) untrackDetachedChildPid(proc.pid);
+        resolve(1);
+      });
 
       if (signal) {
         const kill = () => { aborted = true; proc.kill("SIGTERM"); setTimeout(() => proc.kill("SIGKILL"), 5000); };
@@ -597,6 +604,7 @@ export default function (pi: ExtensionAPI) {
     let lastMessages: Message[] = [];
     let turnsSinceSummary = 0;
     let summarizedOnce = false;
+    let agentEnded = false;
 
     pi.on("context", (event) => {
       lastMessages = event.messages as Message[];
@@ -642,10 +650,16 @@ export default function (pi: ExtensionAPI) {
     // so this stays serialized ahead of it, same as the turn_end summary below.
     // Uses event.prompt directly (the CLI task text) since no context/history exists yet.
     pi.on("before_agent_start", async (event, ctx) => {
+      agentEnded = false;
       await requestSummary(ctx, buildKickoffPrompt(event.prompt));
     });
 
+    pi.on("agent_end", () => {
+      agentEnded = true;
+    });
+
     pi.on("turn_end", async (_event, ctx) => {
+      if (agentEnded) return;
       turnsSinceSummary++;
       const due = !summarizedOnce || turnsSinceSummary >= SUMMARY_INTERVAL_TURNS;
       if (!due) return;

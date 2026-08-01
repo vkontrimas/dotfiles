@@ -84,6 +84,7 @@ export default function (pi: ExtensionAPI) {
   let taskCounts: TaskCounts = { total: 0, remaining: 0 };
   // Set by before_agent_start, consumed by agent_start — see those handlers.
   let kickoffHandled = false;
+  let agentEnded = false;
 
   pi.events.on("tasks:updated", (data) => {
     taskCounts = data as TaskCounts;
@@ -157,6 +158,7 @@ export default function (pi: ExtensionAPI) {
     turnsSinceSummary = 0;
     summarizedOnce = false;
     currentSummary = undefined;
+    agentEnded = false;
   };
 
   // Fires once per *typed* user prompt, before the real first request goes out
@@ -190,8 +192,13 @@ export default function (pi: ExtensionAPI) {
     refreshWorkingMessage(ctx);
   });
 
+  pi.on("agent_end", () => {
+    agentEnded = true;
+  });
+
   pi.on("turn_end", async (_event, ctx) => {
     refreshWorkingMessage(ctx); // picks up latest task counts every turn regardless of summary cadence
+    if (agentEnded) return;
 
     turnsSinceSummary++;
     const due = !summarizedOnce || turnsSinceSummary >= SUMMARY_INTERVAL_TURNS;
