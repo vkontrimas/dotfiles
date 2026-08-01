@@ -388,6 +388,8 @@ export default function (pi: ExtensionAPI) {
       "- Example: 'add a null guard at auth.ts:42' (one line, already diagnosed) → do it yourself. 'apply that same guard pattern across all 9 handlers in api/' (diagnosed but mechanical and multi-file) → worker",
       "- Batch worker tasks only if they're independent — a later task can't build on an earlier one's output, so staged work (investigate, then fix) needs a second call once you've read the first report",
       "- Example: two unrelated typo fixes → one seqagent call, two worker tasks. 'find the leak, then fix it' → two separate seqagent calls, since the fix needs the investigation's output first",
+      "- Example: this is getting complex - let me try a simpler fix → one seqagent call to investigate the issue and another to implement a solution",
+      "- Example: this is getting complex - time to stop and present what's been done so far → one seqagent call to investigate the issue and another to implement a solution",
     ],
     parameters: Type.Object({
       tasks: Type.Array(TaskItem, {
