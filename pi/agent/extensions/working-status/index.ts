@@ -46,8 +46,15 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 const SUMMARY_INTERVAL_TURNS = 3; // configurable cadence
 const SUMMARY_MAX_CHARS = 80;
 const SUMMARY_PROMPT =
-  "8 words max. High-level only — no low-level details. " +
-  "Cold, third-person observation. No conversational text. Fragment.";
+  "Write an 8 or less word high-level summary describing what you are currently doing. Only state *what* you are doing, not why, how, describing the problem itself.\n\n" +
+  "Output a cold, third-person perspective fragment. High-level only — no low-level details.\n\n" +
+  "No first-person (I, we, my, our). No conversational text — no 'Let me', 'That's odd', 'Success!', 'Let's see', 'I need to'. No greetings.\n\n" +
+  "Bad: 'I found the config file and am checking it'\n" +
+  "Good: 'Config file located, verifying settings'\n" + 
+  "Bad: 'Let me look into why the program is segfaulting'\n" +
+  "Good: 'Investigating segfault'\n" +
+  "Bad: 'It looks like bc_rescan_target_files and foo_bar are not exported'\n" +
+  "Good: 'Investigating missing functions'";
 
 interface TaskCounts {
   total: number;
