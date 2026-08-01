@@ -1,0 +1,18 @@
+{
+  "name": "pi-working-status",
+  "private": true,
+  "type": "module",
+  "optionalDependencies": {
+    "pi-tasks": "file:../tasks"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.83.0",
+    "@earendil-works/pi-tui": "^0.83.0",
+    "typebox": "*"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}
