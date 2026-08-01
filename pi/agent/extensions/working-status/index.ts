@@ -54,7 +54,9 @@ const SUMMARY_PROMPT =
   "Bad: 'Let me look into why the program is segfaulting'\n" +
   "Good: 'Investigating segfault'\n" +
   "Bad: 'It looks like bc_rescan_target_files and foo_bar are not exported'\n" +
-  "Good: 'Investigating missing functions'";
+  "Good: 'Investigating missing functions'\n" +
+  "Bad: 'Now let me look at the remaining critical areas - how the 'complicated_function' handles some operation.'\n" +
+  "Good: 'Investigating remaining critical areas.'";
 
 interface TaskCounts {
   total: number;
