@@ -10,8 +10,10 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { Message } from "@earendil-works/pi-ai";
+import { complete } from "@earendil-works/pi-ai/compat";
 import {
   type ExtensionAPI,
+  type ExtensionContext,
   getMarkdownTheme,
   withFileMutationQueue,
 } from "@earendil-works/pi-coding-agent";
@@ -38,6 +40,7 @@ interface StepResult {
   };
   stopReason?: string;
   errorMessage?: string;
+  summary?: string;
 }
 
 type StepStatus = "pending" | "running" | "done" | "error";
@@ -72,7 +75,7 @@ function formatUsage(u: StepResult["usage"]): string {
   const parts: string[] = [];
   if (u.toolCalls) parts.push(`${u.toolCalls} calls`);
   if (u.input || u.output) parts.push(`${formatTokens(u.input + u.output)} tok`);
-  return parts.join(" ");
+  return parts.join(", ");
 }
 
 function formatTotalStats(steps: Array<{ usage: StepResult["usage"] }>, errors: number): string {
@@ -154,7 +157,10 @@ async function runAgent({ agent, task, cwd, signal, onUpdate, currentModel }: Ru
   try {
     result.exitCode = await new Promise<number>((resolve) => {
       const inv = getPiInvocation(args);
-      const proc = spawn(inv.command, inv.args, { cwd, shell: false, stdio: ["ignore", "pipe", "pipe"] });
+      const proc = spawn(inv.command, inv.args, {
+        cwd, shell: false, stdio: ["ignore", "pipe", "pipe"],
+        env: { ...process.env, SEQAGENT_SUBAGENT: "1" },
+      });
       let buf = "";
       let aborted = false;
 
@@ -184,6 +190,10 @@ async function runAgent({ agent, task, cwd, signal, onUpdate, currentModel }: Ru
         }
         if (ev.type === "tool_result_end" && ev.message) {
           result.messages.push(ev.message as Message);
+          emit();
+        }
+        if (ev.type === "seqagent_summary" && typeof ev.text === "string") {
+          result.summary = ev.text;
           emit();
         }
       };
@@ -428,15 +438,80 @@ export default function (pi: ExtensionAPI) {
       for (let i = 0; i < details.steps.length; i++) {
         const s = details.steps[i];
         text += `\n  ${icon(s.status, details.frame)} ${theme.fg("muted", `${i + 1}.`) + " "}${theme.fg("accent", s.agent)}`;
-        const preview = s.task.length > 40 ? s.task.slice(0, 40) + "…" : s.task;
-        text += theme.fg("dim", ` ${preview}`);
-        // Stats for all agents
         const u = formatUsage(s.usage);
-        if (u) text += theme.fg("accent", ` ${u}`);
+        if (u) text += theme.fg("dim", " · ") + theme.fg("accent", u);
+        const message = s.summary ?? (s.task.length > 40 ? s.task.slice(0, 40) + "…" : s.task);
+        if (message) text += theme.fg("dim", ` · ${message}`);
       }
       // Blank line then expand hint
       if (!expanded && running === 0) text += `\n\n${theme.fg("muted", "(Ctrl+O to expand)")}`;
       return new Text(text, 0, 0);
     },
   });
+
+  // ── Live activity summaries (subagent-side only) ──────────────────────────
+  // Runs inside the spawned child process (see SEQAGENT_SUBAGENT env var set
+  // by runAgent's spawn() call above) since this same extension module is
+  // loaded globally for every `pi` invocation, including seqagent's children.
+
+  if (process.env.SEQAGENT_SUBAGENT === "1") {
+    const SUMMARY_INTERVAL_TURNS = 4; // configurable cadence
+    const SUMMARY_PROMPT =
+      "In one short sentence, summarize what you are currently doing or just accomplished, " +
+      "for a live progress display. Respond with only that sentence, no preamble or markdown.";
+
+    let lastMessages: Message[] = [];
+    let turnsSinceSummary = 0;
+    let summarizedOnce = false;
+    let inFlight = false;
+
+    pi.on("context", (event) => {
+      lastMessages = event.messages as Message[];
+    });
+
+    const requestSummary = async (ctx: ExtensionContext) => {
+      try {
+        const model = ctx.model;
+        if (!model) return;
+        const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
+        if (!auth.ok) return;
+
+        const activeNames = new Set(pi.getActiveTools());
+        const tools = pi.getAllTools()
+          .filter((t) => activeNames.has(t.name))
+          .map((t) => ({ name: t.name, description: t.description, parameters: t.parameters }));
+
+        const messages: Message[] = [
+          ...lastMessages,
+          { role: "user", content: [{ type: "text", text: SUMMARY_PROMPT }], timestamp: Date.now() },
+        ];
+
+        const response = await complete(
+          model,
+          { systemPrompt: ctx.getSystemPrompt(), messages, tools },
+          { apiKey: auth.apiKey, headers: auth.headers, env: auth.env, reasoning: "off", maxTokens: 60, signal: ctx.signal },
+        );
+
+        const text = response.content
+          .filter((c): c is { type: "text"; text: string } => c.type === "text")
+          .map((c) => c.text)
+          .join(" ")
+          .trim();
+
+        if (text) console.log(JSON.stringify({ type: "seqagent_summary", text }));
+      } catch {
+        // best-effort; never disrupt the real turn
+      }
+    };
+
+    pi.on("turn_end", (_event, ctx) => {
+      turnsSinceSummary++;
+      const due = !summarizedOnce || turnsSinceSummary >= SUMMARY_INTERVAL_TURNS;
+      if (!due || inFlight) return;
+      turnsSinceSummary = 0;
+      summarizedOnce = true;
+      inFlight = true;
+      requestSummary(ctx).finally(() => { inFlight = false; });
+    });
+  }
 }
