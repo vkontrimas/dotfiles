@@ -45,26 +45,43 @@
  * argument. It's gone. What stays is the part with evidence behind it: kill
  * the wind-up, the preamble, and the recap, and leave the grammar alone.
  *
- * The block is kept short on purpose, and that constraint is Pi's, not a
- * guess. Pi's whole system prompt and tool definitions together come in under
- * 1000 tokens, on the stated grounds that frontier models "have been RL-trained
- * up the wazoo, so they inherently understand what a coding agent is. There
- * does not appear to be a need for 10,000 tokens of system prompt." A 700-token
- * essay about brevity bolted onto a ~480-token prompt would more than double it
- * to say "be brief", which is self-refuting on both counts. So the block keeps
- * only what the model can't infer:
+ * On size, this block deliberately breaks with Pi. Pi's whole system prompt
+ * and tool definitions together come in under 1000 tokens, on the stated
+ * grounds that frontier models "have been RL-trained up the wazoo, so they
+ * inherently understand what a coding agent is. There does not appear to be a
+ * need for 10,000 tokens of system prompt." That reasoning holds for frontier
+ * models. It does not hold here: the local qwen3.6-27b ignored the terse
+ * version, and every measured improvement came from spending more tokens, not
+ * fewer. This block runs ~640 tokens against a ~510-token base prompt — larger
+ * than the prompt it modifies, which would be indefensible if the numbers said
+ * otherwise. They don't, so the cost is accepted rather than argued away.
+ * Revisit it against a stronger model, where Pi's reasoning probably does
+ * apply and most of this can go.
+ *
+ * What earns the tokens:
  *
  *   - Literal banned phrases. "Be concise" is already in Guidelines and gets
  *     ignored; a named string is what actually catches.
  *   - The carve-outs (security, destructive actions, a confused user) — what
  *     makes a terse style safe to leave always-on, since otherwise the model
  *     compresses exactly where ambiguity costs most.
- *   - Four bad/good pairs, covering the direct question, the tool-call
- *     wind-up, the reaction to a failure, and the end-of-turn recap. Bad
- *     examples at realistic length are what a model pattern-matches against,
- *     and the pairs are what moved the numbers — the same lesson the
+ *   - Four bad/good pairs: the direct question, the tool-call wind-up, the
+ *     continuation line that trails off in a colon, and the end-of-turn recap.
+ *     Bad examples at realistic length are what a model pattern-matches
+ *     against, and the pairs are what moved the numbers — the same lesson the
  *     `working-status` SUMMARY_PROMPT landed on independently (1eb8b5d), where
- *     adding pairs was what finally made that prompt stick.
+ *     adding pairs was what finally made that prompt stick. Every BAD side is
+ *     lifted verbatim from the bifrost sample rather than invented, so each
+ *     pair is aimed at a shape this setup actually produces.
+ *
+ *     Four, not seven. Three more were drafted — the meta-comprehension
+ *     opener, "Done. Here's the summary:", and a reaction to a failed build —
+ *     and cut: the first two ran at 3/75 and 2/75 in the sample, and the third
+ *     was half-invented rather than observed. The four that stayed cover the
+ *     two dominant classes and the longest messages. The continuation pair
+ *     looks redundant beside the wind-up one and isn't: it carries no banned
+ *     opener, only a colon, so a model that learns "avoid Let me" still
+ *     produces it.
  *
  * Everything else — that headers are optional, that bullets shouldn't nest —
  * the model already knows.
@@ -128,9 +145,9 @@ GOOD: Checking the call sites.
 </example>
 
 <example>
-[a build just failed]
-BAD: Hmm, that's odd. It looks like the build is failing. Let me take a closer look at the error and see what's going on here:
-GOOD: The build fails on a missing include — tc_move.c:31 calls tc_lang_tags_get but only pulls in tc_compiler.h.
+[applying the same change to the second file]
+BAD: Now the same for \`working-status/index.ts\`:
+GOOD: Making the same change in \`working-status/index.ts\`.
 </example>
 
 <example>
