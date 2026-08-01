@@ -58,12 +58,13 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 const SUMMARY_INTERVAL_TURNS = 3; // configurable cadence
 const SUMMARY_MAX_CHARS = 80;
 const SUMMARY_PROMPT =
-  "8 words max, fragment (drop articles/\"I\"), no hedging (\"let me\", \"I will\"). " +
-  "What are you doing right now?";
+  "8 words max. High-level only — no low-level details. " +
+  "Cold, third-person observation. No conversational text. Fragment.";
 function buildKickoffPrompt(requestText: string): string {
   return (
-    "8 words max, fragment (drop articles/\"I\"), no hedging, no greeting. " +
-    `What does this request ask for?\n\nRequest: "${requestText}"`
+    "8 words max. High-level only — no low-level details. " +
+    "Cold, third-person observation. No greeting. Fragment.\n\n" +
+    `Request: "${requestText}"`
   );
 }
 

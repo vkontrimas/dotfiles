@@ -584,12 +584,13 @@ export default function (pi: ExtensionAPI) {
   if (process.env.SEQAGENT_SUBAGENT === "1") {
     const SUMMARY_INTERVAL_TURNS = 3; // configurable cadence
     const SUMMARY_PROMPT =
-      "8 words max, fragment (drop articles/\"I\"), no hedging (\"let me\", \"I will\"). " +
-      "What are you doing right now?";
+      "8 words max. High-level only — no low-level details. " +
+      "Cold, third-person observation. No conversational text. Fragment.";
     function buildKickoffPrompt(requestText: string): string {
       return (
-        "8 words max, fragment (drop articles/\"I\"), no hedging, no greeting. " +
-        `What does this task ask for?\n\nTask: "${requestText}"`
+        "8 words max. High-level only — no low-level details. " +
+        "Cold, third-person observation. No greeting. Fragment.\n\n" +
+        `Task: "${requestText}"`
       );
     }
 
