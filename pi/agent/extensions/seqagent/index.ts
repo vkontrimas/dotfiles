@@ -566,7 +566,8 @@ export default function (pi: ExtensionAPI) {
         text += `\n  ${icon(s.status, details.frame)} ${theme.fg("muted", `${i + 1}.`) + " "}${theme.fg("accent", s.agent)}`;
         const u = formatUsage(s.usage);
         if (u) text += theme.fg("dim", " · ") + theme.fg("accent", u);
-        const message = s.summary ?? (s.task.length > 40 ? s.task.slice(0, 40) + "…" : s.task);
+        const rawMessage = s.summary ?? s.task;
+        const message = rawMessage.length > 80 ? rawMessage.slice(0, 80) + "…" : rawMessage;
         if (message) text += theme.fg("dim", ` · ${message}`);
       }
       // Blank line then expand hint
