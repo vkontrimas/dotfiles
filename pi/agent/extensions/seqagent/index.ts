@@ -15,8 +15,6 @@ import {
   type ExtensionAPI,
   type ExtensionContext,
   getMarkdownTheme,
-  trackDetachedChildPid,
-  untrackDetachedChildPid,
   withFileMutationQueue,
 } from "@earendil-works/pi-coding-agent";
 import { Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
@@ -241,7 +239,6 @@ async function runAgent({ agent, task, cwd, signal, onUpdate, currentModel }: Ru
         cwd, shell: false, stdio: ["ignore", "pipe", "pipe"],
         env: { ...process.env, SEQAGENT_SUBAGENT: "1" },
       });
-      if (proc.pid) trackDetachedChildPid(proc.pid);
       let buf = "";
       let errBuf = "";
       let aborted = false;
@@ -310,13 +307,11 @@ async function runAgent({ agent, task, cwd, signal, onUpdate, currentModel }: Ru
         for (const l of lines) parseErrLine(l);
       });
       proc.on("close", (code) => {
-        if (proc.pid) untrackDetachedChildPid(proc.pid);
         if (buf.trim()) parse(buf);
         if (errBuf.trim()) parseErrLine(errBuf);
         resolve(code ?? 0);
       });
       proc.on("error", () => {
-        if (proc.pid) untrackDetachedChildPid(proc.pid);
         resolve(1);
       });
 
