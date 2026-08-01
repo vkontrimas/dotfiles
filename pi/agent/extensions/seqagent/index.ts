@@ -591,8 +591,9 @@ export default function (pi: ExtensionAPI) {
   if (process.env.SEQAGENT_SUBAGENT === "1") {
     const SUMMARY_INTERVAL_TURNS = 3; // configurable cadence
     const SUMMARY_PROMPT =
-      "8 words max. High-level status fragment only.\n\n" +
-      "Rules: third-person. No first-person (I, we, my, our). No conversational text — no 'That's odd', 'Success!', 'Let's see', 'I need to'. No greetings. No low-level details.\n\n" +
+      "Write an 8 or less word high-level summary of what you are currently doing.\n\n" +
+      "Output a cold, third-person fragment. High-level only — no low-level details.\n\n" +
+      "No first-person (I, we, my, our). No conversational text — no 'Let me', 'That's odd', 'Success!', 'Let's see', 'I need to'. No greetings.\n\n" +
       "Bad: 'I found the config file and am checking it'\n" +
       "Good: 'Config file located, verifying settings'";
 
