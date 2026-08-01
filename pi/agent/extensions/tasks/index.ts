@@ -262,15 +262,20 @@ let piRef: ExtensionAPI | null = null;
 // it continuously for zero context. Cleared when no list is active.
 //
 // Also pushes the same counts on the shared event bus (`tasks:updated`) for
-// other extensions (e.g. `working-status`) to consume live. This is not the
-// same as importing this module: pi's extension loader gives each extension
-// its own jiti instance with moduleCache disabled, so a sibling extension's
-// `import("pi-tasks")` re-evaluates this file from scratch in an isolated
-// instance and never sees these mutations. `pi.events` is a single bus
-// owned by pi's core runtime and handed to every extension's `pi`, so it
-// doesn't have that problem.
+// other extensions (e.g. `working-status`) to consume live, and persists a
+// full `{ tasks, nextId }` snapshot as a custom session entry so reload/
+// resume/`/tree` can restore state by reading the last snapshot instead of
+// replaying every historical add_tasks/complete_task/cancel_task result (see
+// reconstructTasks below). Neither is the same as importing this module: pi's
+// extension loader gives each extension its own jiti instance with
+// moduleCache disabled, so a sibling extension's `import("pi-tasks")`
+// re-evaluates this file from scratch in an isolated instance and never sees
+// these mutations. `pi.events` and `pi.appendEntry` are core-owned — a single
+// bus/session store handed to every extension's `pi` — so neither has that
+// problem.
 function updateStatus(ctx: ExtensionContext): void {
 	piRef?.events.emit("tasks:updated", { total: tasks.length, remaining: tasks.filter(isOpen).length });
+	piRef?.appendEntry<{ tasks: Task[]; nextId: number }>("tasks-state", { tasks, nextId });
 	if (tasks.length === 0) {
 		ctx.ui.setStatus("tasks", undefined);
 		return;
@@ -331,45 +336,64 @@ export default function (pi: ExtensionAPI): void {
 		turnsSinceReminder = 0;
 	};
 
-	// Rebuild `tasks`/`nextId` (and the counters derivable from them) by
-	// replaying every past add_tasks/complete_task result on the current branch,
-	// in order. Runs on session_start (covers /reload, /resume, and fresh
-	// sessions) and session_tree (covers manual /tree navigation onto a
-	// different branch).
+	// Rebuild `tasks`/`nextId` from the last persisted `tasks-state` snapshot on
+	// the current branch (see updateStatus above) — written after every mutation,
+	// so this is just "read the latest one" instead of replaying history. Runs
+	// on session_start (covers /reload, /resume, and fresh sessions) and
+	// session_tree (covers manual /tree navigation onto a different branch), so
+	// getBranch() naturally scopes this to whichever branch is now active.
+	//
+	// Sessions created before snapshots existed have none on their branch, so
+	// this falls back to the old approach — replaying every past
+	// add_tasks/complete_task/cancel_task result in order — for those only.
+	// New sessions get a snapshot on the first mutation and never touch the
+	// fallback again.
 	const reconstructTasks = (ctx: ExtensionContext) => {
-		tasks = [];
-		nextId = 1;
+		const branch = ctx.sessionManager.getBranch();
+
+		let snapshot: { tasks: Task[]; nextId: number } | undefined;
+		for (const entry of branch) {
+			if (entry.type === "custom" && entry.customType === "tasks-state") {
+				snapshot = entry.data as { tasks: Task[]; nextId: number };
+			}
+		}
+
+		if (snapshot) {
+			tasks = snapshot.tasks;
+			nextId = snapshot.nextId;
+		} else {
+			tasks = [];
+			nextId = 1;
+			for (const entry of branch) {
+				if (entry.type === "custom" && entry.customType === "tasks-cleared") {
+					tasks = [];
+					nextId = 1;
+					continue;
+				}
+
+				if (entry.type !== "message") continue;
+				const msg = entry.message;
+				if (msg.role !== "toolResult") continue;
+
+				if (msg.toolName === "add_tasks") {
+					const details = msg.details as { added?: Task[] } | undefined;
+					if (!details?.added) continue;
+					tasks = [...tasks, ...details.added];
+					nextId = tasks.length + 1;
+				} else if (msg.toolName === "complete_task" || msg.toolName === "cancel_task") {
+					const details = msg.details as { task?: Task } | undefined;
+					if (!details?.task) continue;
+					tasks = tasks.map((t) => (t.id === details.task!.id ? details.task! : t));
+				}
+			}
+		}
+
+		// Stats are session-lifetime telemetry, not functional state — always
+		// reset on reload/resume/tree-nav regardless of which path rebuilt tasks.
 		stats.addCalls = 0;
 		stats.completeCalls = 0;
 		stats.cancelCalls = 0;
 		stats.tasksCreated = 0;
-
-		for (const entry of ctx.sessionManager.getBranch()) {
-			if (entry.type === "custom" && entry.customType === "tasks-cleared") {
-				tasks = [];
-				nextId = 1;
-				continue;
-			}
-
-			if (entry.type !== "message") continue;
-			const msg = entry.message;
-			if (msg.role !== "toolResult") continue;
-
-			if (msg.toolName === "add_tasks") {
-				const details = msg.details as { added?: Task[] } | undefined;
-				if (!details?.added) continue;
-				tasks = [...tasks, ...details.added];
-				nextId = tasks.length + 1;
-				stats.tasksCreated += details.added.length;
-				stats.addCalls++;
-			} else if (msg.toolName === "complete_task" || msg.toolName === "cancel_task") {
-				const details = msg.details as { task?: Task } | undefined;
-				if (!details?.task) continue;
-				tasks = tasks.map((t) => (t.id === details.task!.id ? details.task! : t));
-				if (msg.toolName === "complete_task") stats.completeCalls++;
-				else stats.cancelCalls++;
-			}
-		}
 
 		// Turn numbering restarts on reload/resume, so a stale turn-gap baseline
 		// would just produce a misleadingly huge first gap — drop it instead.
