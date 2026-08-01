@@ -28,12 +28,16 @@ try {
   tasksApi = null;
 }
 
-const SUMMARY_INTERVAL_TURNS = 4; // configurable cadence
+const SUMMARY_INTERVAL_TURNS = 2; // configurable cadence
 const SUMMARY_MAX_CHARS = 80;
 const SUMMARY_PROMPT =
   "In 8 words or fewer, state what you are currently doing or just accomplished, " +
   "for a live progress display. Respond with only that short phrase — no sentence, " +
   "no preamble, no markdown, no trailing punctuation.";
+const KICKOFF_PROMPT =
+  "In 8 words or fewer, state what this request is about, for a live progress display. " +
+  "Respond with only that short phrase — no sentence, no preamble, no markdown, " +
+  "no trailing punctuation.";
 
 export default function (pi: ExtensionAPI) {
   let lastMessages: Message[] = [];
@@ -68,13 +72,7 @@ export default function (pi: ExtensionAPI) {
     lastMessages = event.messages as Message[];
   });
 
-  pi.on("agent_start", () => {
-    turnsSinceSummary = 0;
-    summarizedOnce = false;
-    currentSummary = undefined;
-  });
-
-  const requestSummary = async (ctx: ExtensionContext) => {
+  const requestSummary = async (ctx: ExtensionContext, promptText: string) => {
     try {
       const model = ctx.model;
       if (!model) return;
@@ -88,7 +86,7 @@ export default function (pi: ExtensionAPI) {
 
       const messages: Message[] = [
         ...lastMessages,
-        { role: "user", content: [{ type: "text", text: SUMMARY_PROMPT }], timestamp: Date.now() },
+        { role: "user", content: [{ type: "text", text: promptText }], timestamp: Date.now() },
       ];
 
       const response = await complete(
@@ -112,6 +110,19 @@ export default function (pi: ExtensionAPI) {
     }
   };
 
+  // Fires once per user prompt, before the real first request goes out — pi
+  // awaits before_agent_start handlers before building that request (see
+  // agent-session.js), so this stays serialized ahead of it, same as the
+  // turn_end summary below. Resetting state here (not a separate agent_start
+  // handler) matters: before_agent_start fires before agent_start, so a later
+  // reset there would wipe out the kickoff summary this sets.
+  pi.on("before_agent_start", async (event, ctx) => {
+    turnsSinceSummary = 0;
+    summarizedOnce = false;
+    currentSummary = undefined;
+    await requestSummary(ctx, `${event.prompt}\n\n---\n${KICKOFF_PROMPT}`);
+  });
+
   pi.on("turn_end", async (_event, ctx) => {
     refreshWorkingMessage(ctx); // picks up latest task counts every turn regardless of summary cadence
 
@@ -127,7 +138,7 @@ export default function (pi: ExtensionAPI) {
     // concurrent connections cleanly — overlapping requests were observed
     // causing intermittent "write: broken pipe" 500s from bifrost (stale
     // pooled connection reused while the slot was mid-generation).
-    await requestSummary(ctx);
+    await requestSummary(ctx, SUMMARY_PROMPT);
   });
 
   pi.on("agent_settled", (_event, ctx) => {

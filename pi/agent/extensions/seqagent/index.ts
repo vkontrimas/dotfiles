@@ -582,11 +582,15 @@ export default function (pi: ExtensionAPI) {
   // loaded globally for every `pi` invocation, including seqagent's children.
 
   if (process.env.SEQAGENT_SUBAGENT === "1") {
-    const SUMMARY_INTERVAL_TURNS = 4; // configurable cadence
+    const SUMMARY_INTERVAL_TURNS = 2; // configurable cadence
     const SUMMARY_PROMPT =
       "In 8 words or fewer, state what you are currently doing or just accomplished, " +
       "for a live progress display. Respond with only that short phrase — no sentence, " +
       "no preamble, no markdown, no trailing punctuation.";
+    const KICKOFF_PROMPT =
+      "In 8 words or fewer, state what this task is about, for a live progress display. " +
+      "Respond with only that short phrase — no sentence, no preamble, no markdown, " +
+      "no trailing punctuation.";
 
     let lastMessages: Message[] = [];
     let turnsSinceSummary = 0;
@@ -596,7 +600,7 @@ export default function (pi: ExtensionAPI) {
       lastMessages = event.messages as Message[];
     });
 
-    const requestSummary = async (ctx: ExtensionContext) => {
+    const requestSummary = async (ctx: ExtensionContext, promptText: string) => {
       try {
         const model = ctx.model;
         if (!model) return;
@@ -610,7 +614,7 @@ export default function (pi: ExtensionAPI) {
 
         const messages: Message[] = [
           ...lastMessages,
-          { role: "user", content: [{ type: "text", text: SUMMARY_PROMPT }], timestamp: Date.now() },
+          { role: "user", content: [{ type: "text", text: promptText }], timestamp: Date.now() },
         ];
 
         const response = await complete(
@@ -631,6 +635,14 @@ export default function (pi: ExtensionAPI) {
       }
     };
 
+    // Fires once, before the subagent's very first request goes out — pi awaits
+    // before_agent_start handlers before building that request (see agent-session.js),
+    // so this stays serialized ahead of it, same as the turn_end summary below.
+    // Uses event.prompt directly (the CLI task text) since no context/history exists yet.
+    pi.on("before_agent_start", async (event, ctx) => {
+      await requestSummary(ctx, `${event.prompt}\n\n---\n${KICKOFF_PROMPT}`);
+    });
+
     pi.on("turn_end", async (_event, ctx) => {
       turnsSinceSummary++;
       const due = !summarizedOnce || turnsSinceSummary >= SUMMARY_INTERVAL_TURNS;
@@ -644,7 +656,7 @@ export default function (pi: ExtensionAPI) {
       // concurrent connections cleanly — overlapping requests were observed
       // causing intermittent "write: broken pipe" 500s from bifrost (stale
       // pooled connection reused while the slot was mid-generation).
-      await requestSummary(ctx);
+      await requestSummary(ctx, SUMMARY_PROMPT);
     });
   }
 }
