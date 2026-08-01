@@ -378,6 +378,7 @@ export default function (pi: ExtensionAPI) {
       `Delegate focused work to subagents. Each runs in a fresh, isolated context and they share no state — pass several tasks to run them one after another. Available agents: ${agentList || "none"}.`,
       "- Spawn when the task needs 3+ files, a search across directories, or more than ~5 tool calls here, and for broad questions: 'how does X work?', 'map the codebase', 'find all uses of Y'",
       "- Skip for narrow lookups (one known file, a function signature, a simple grep) and for anything that depends on context from this conversation",
+      "- Example: 'how does the retry logic work?' → spawn explore. 'what does retry.ts:34 do?' → read it yourself.",
       "- Spawn when you're stuck: the same fix tried twice, or two failed attempts at one bug. A fresh context isn't anchored to your wrong theory — hand `investigate` the symptom and what you already ruled out",
       "- Use explore/investigate before planning changes; research for external info; review only for large changes (10+ files, ~10k+ LOC, architectural shifts), scoped to the relevant area rather than 'review everything'",
       "- `worker` is the only agent that can change anything; the rest are read-only, so asking them to edit, delete, or run a build gets you a plan, not the work",
