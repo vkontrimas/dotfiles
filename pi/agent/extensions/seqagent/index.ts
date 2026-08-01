@@ -143,6 +143,13 @@ function getFinalOutput(messages: Message[]): string {
   return "";
 }
 
+// Task text and model-written summaries can be multi-line; the status list is
+// one line per step, so flatten whitespace before truncating.
+function oneLine(text: string, max: number): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length > max ? flat.slice(0, max) + "…" : flat;
+}
+
 function formatTokens(n: number): string {
   if (n < 1000) return n.toString();
   if (n < 1_000_000) return `${Math.round(n / 1000)}k`;
@@ -501,7 +508,7 @@ export default function (pi: ExtensionAPI) {
       let text = theme.fg("toolTitle", theme.bold("seqagent ")) + theme.fg("accent", `(${tasks.length} task${tasks.length > 1 ? "s" : ""})`);
       for (let i = 0; i < Math.min(tasks.length, 4); i++) {
         const t = tasks[i];
-        const preview = t.task.length > 50 ? t.task.slice(0, 50) + "…" : t.task;
+        const preview = oneLine(t.task, 50);
         text += `\n  ${theme.fg("muted", `${i + 1}.`) + " "}${theme.fg("accent", t.agent)}${theme.fg("dim", ` ${preview}`)}`;
       }
       if (tasks.length > 4) text += `\n  ${theme.fg("muted", `… +${tasks.length - 4} more`)}`;
@@ -543,7 +550,7 @@ export default function (pi: ExtensionAPI) {
         for (const s of details.steps) {
           container.addChild(new Spacer(1));
           container.addChild(new Text(
-            `${icon(s.status, details.frame)} ${theme.fg("accent", s.agent)}${theme.fg("muted", ` — ${s.task}`)}`,
+            `${icon(s.status, details.frame)} ${theme.fg("accent", s.agent)}${theme.fg("muted", ` — ${oneLine(s.task, 120)}`)}`,
             0, 0,
           ));
           const output = getFinalOutput(s.messages);
@@ -568,8 +575,7 @@ export default function (pi: ExtensionAPI) {
         text += `\n  ${icon(s.status, details.frame)} ${theme.fg("muted", `${i + 1}.`) + " "}${theme.fg("accent", s.agent)}`;
         const u = formatUsage(s.usage);
         if (u) text += theme.fg("dim", " · ") + theme.fg("accent", u);
-        const rawMessage = s.summary ?? s.task;
-        const message = rawMessage.length > 80 ? rawMessage.slice(0, 80) + "…" : rawMessage;
+        const message = oneLine(s.summary ?? s.task, 80);
         if (message) text += theme.fg("dim", ` · ${message}`);
       }
       // Blank line then expand hint
