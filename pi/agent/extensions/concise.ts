@@ -20,24 +20,30 @@
  * anchor — that case falls back to appending, so the block is never silently
  * dropped.
  *
- * The register is telegraphic — fragments, dropped articles, dropped subject
- * pronouns — but two of caveman's habits are still banned: invented
- * abbreviations (cfg, impl, fn) and arrow chains (A -> B -> fails). The
- * tokenizer splits those the same as the full word, so they save nothing and
- * cost the reader a decode. They were never the part of caveman that was
- * concise.
+ * The register is ordinary English — short, complete sentences. Two of
+ * caveman's habits are banned outright: invented abbreviations (cfg, impl, fn)
+ * and arrow chains (A -> B -> fails). The tokenizer splits those the same as
+ * the full word, so they save nothing and cost the reader a decode. They were
+ * never the part of caveman that was concise.
  *
- * What the register is worth was measured, not guessed. Sampling 300 requests
- * from the local bifrost log (85 carrying assistant prose, qwen3.6-27b): 60%
- * contained "Let me", 65% ended in a trailing colon, and 88% were under 200
- * chars. Nearly all of that volume was one shape — a wind-up narrating the
- * tool call about to happen ("Now let me run the test suite to check all
- * fixes:"). An earlier revision of this block caused it: it licensed "one
- * sentence before your first tool call", which the model applied to every tool
- * call, and simultaneously banned fragments, which forced each of those into a
- * full grammatical sentence. So the rule now targets the wind-up rather than
- * the act — "Running suite." is fine, and the banned-opener list is literal
- * because that is what actually catches.
+ * Both of those choices were measured against the local bifrost log, not
+ * guessed. The first sample (300 requests, 85 carrying assistant prose,
+ * qwen3.6-27b): 60% contained "Let me", 65% ended in a trailing colon, 88%
+ * were under 200 chars. Nearly all of that volume was one shape — a wind-up
+ * narrating the tool call about to happen ("Now let me run the test suite to
+ * check all fixes:"). An earlier revision of this block caused it: it licensed
+ * "one sentence before your first tool call", which the model applied to every
+ * tool call. So the rule now targets the wind-up rather than the act, and the
+ * banned-opener list is literal because that is what actually catches.
+ *
+ * That worked. Re-sampling 250 requests after the change: "Let me" fell to
+ * 24%, trailing colons to 36%. A telegraphic register was pushed at the same
+ * time — fragments, dropped articles, dropped subject pronouns — and that half
+ * did not take. The model kept writing complete sentences anyway ("Reading the
+ * deref and addr_of type checker implementations."), which is both fine to
+ * read and what it wants to do, so the mandate was paying tokens to lose an
+ * argument. It's gone. What stays is the part with evidence behind it: kill
+ * the wind-up, the preamble, and the recap, and leave the grammar alone.
  *
  * The block is kept short on purpose, and that constraint is Pi's, not a
  * guess. Pi's whole system prompt and tool definitions together come in under
@@ -53,9 +59,12 @@
  *   - The carve-outs (security, destructive actions, a confused user) — what
  *     makes a terse style safe to leave always-on, since otherwise the model
  *     compresses exactly where ambiguity costs most.
- *   - Two bad/good pairs. Bad examples at realistic length are what a model
- *     pattern-matches against; the second covers the tool-call wind-up, which
- *     the measurement above makes the dominant failure by a wide margin.
+ *   - Four bad/good pairs, covering the direct question, the tool-call
+ *     wind-up, the reaction to a failure, and the end-of-turn recap. Bad
+ *     examples at realistic length are what a model pattern-matches against,
+ *     and the pairs are what moved the numbers — the same lesson the
+ *     `working-status` SUMMARY_PROMPT landed on independently (1eb8b5d), where
+ *     adding pairs was what finally made that prompt stick.
  *
  * Everything else — that headers are optional, that bullets shouldn't nest —
  * the model already knows.
@@ -94,42 +103,49 @@ const REMINDER_EVERY_N_TURNS = (() => {
 const GUIDELINES_ANCHOR = "\n\nGuidelines:\n";
 
 const CONCISE_BLOCK = `<output_style>
-Outcome first. Fragments over sentences — drop articles, drop "I", drop filler verbs.
+Lead with the outcome: the first sentence says what happened or what you found. Write short, complete sentences — cut the filler, not the grammar.
 
-Status lines are one fragment, or nothing. Saying what comes next is fine, the wind-up isn't: "Running suite." "Grepping callers." "12 fails, all @copy classify." Never open with "Let me", "Now let me", "I'll", "Let's", or an acknowledgment ("Good", "Perfect", "Found it", "All tests pass!"). No trailing colon before a tool call.
+Say what you are doing in one short sentence, or say nothing. Never open with a wind-up ("Let me", "Now let me", "I'll now", "Let's") or an acknowledgment ("Good", "Perfect", "Great", "Found it", "All tests pass!"). Do not end a line with a colon just to introduce a tool call.
 
-Cut preamble ("Sure!", "Great question", "Based on the information provided"), framing ("Here is the report", "The answer is X" — give X), hedging ("perhaps", "seems like", "you might want to consider"), restating the question.
+Cut preamble ("Sure!", "Great question", "Based on the information provided"), framing ("Here is the report", "The answer is X" — just give X), hedging ("perhaps", "seems like", "you might want to consider"), and restating the question.
 
-End-of-turn summary: structure is welcome — headers, bold labels, a per-file list. Terseness applies inside it. One line per entry, fragments, no re-pasted code, no paragraph re-narrating a diff the user watched scroll past.
+End-of-turn summary: structure is welcome — headers, bold labels, a per-file list — but keep the prose inside to one line per entry. No re-pasted code, no paragraph re-narrating a diff the user watched scroll past.
 
-Keep exact error strings, file_path:line_number, and why when the fix isn't obvious. Never invent abbreviations (cfg, impl, fn) or arrow chains (A → B → fails); both cost tokens and cost the reader.
+Keep exact error strings, file_path:line_number, and the reason why when the fix is not obvious. Never invent abbreviations (cfg, impl, fn) or arrow chains (A → B → fails); both cost tokens and cost the reader.
 
-Full prose, full length for security implications, destructive actions, or a confused user — clarity beats brevity there. Never mention this style.
+Write at full length for security implications, destructive actions, or a confused user — clarity beats brevity there. Never mention this style.
 
 <example>
 user: does the retry wrapper handle 429s?
 BAD: Great question! Let me take a look at the retry logic for you. Looking at the code, I can see that the retry wrapper does indeed appear to handle 429 responses. Here is what I found...
-GOOD: No. retry.ts:34 retries 5xx only. 429 falls to the error path.
+GOOD: No — retry.ts:34 retries on 5xx only, so 429 falls through to the error path.
 </example>
 
 <example>
 [about to grep for callers]
 BAD: Now let me search for where this is called:
-GOOD: Grepping callers.
+GOOD: Checking the call sites.
+</example>
+
+<example>
+[a build just failed]
+BAD: Hmm, that's odd. It looks like the build is failing. Let me take a closer look at the error and see what's going on here:
+GOOD: The build fails on a missing include — tc_move.c:31 calls tc_lang_tags_get but only pulls in tc_compiler.h.
 </example>
 
 <example>
 [end of turn, after edits]
-BAD: **Compiler changes** (\`tc_move.c\`): 1. **Struct/union copy classification**: Changed from \`!droppable || has_copy\` to just \`has_copy\`. A struct/union is now copyable **only** with \`@copy\`, regardless of whether it owns resources.
-GOOD: **\`tc_move.c\`** — struct/union copy now needs \`@copy\`; arrays compose from element type.
-**12 tests** — added \`@copy\`, 3 restructured (generics segfault). 1381 pass.
+BAD: **Compiler changes** (\`tc_move.c\`): 1. **Struct/union copy classification**: Changed from \`!droppable || has_copy\` to just \`has_copy\`. A struct/union is now copyable **only** with \`@copy\`.
+GOOD: **\`tc_move.c\`** — struct/union copy now requires \`@copy\`, and arrays compose from the element type.
+**12 tests** — added \`@copy\` to 8, restructured 3 (generics segfault). All 1381 pass.
 </example>
 </output_style>`;
 
 const REMINDER_TEXT =
 	`<system-reminder>\n` +
-	`Concise. Status lines are one fragment — no "Let me...", no preamble, no recap ` +
-	`of edits the user watched. Outcome first.\n` +
+	`Stay concise. Lead with the outcome. No wind-up before a tool call ("Let me...", ` +
+	`"Now let me..."), no preamble, and no recap of edits the user watched. Short, ` +
+	`complete sentences.\n` +
 	`</system-reminder>`;
 
 export default function (pi: ExtensionAPI): void {
