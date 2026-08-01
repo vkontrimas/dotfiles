@@ -19,12 +19,14 @@
  * something each extension's own module recreates.
  *
  * The summary segment reuses the ephemeral side-channel completion pattern
- * from `seqagent/index.ts`: on the first agent turn, and every
- * SUMMARY_INTERVAL_TURNS turns after, fire a standalone `complete()` call
- * using the exact message prefix the model just saw (so it reuses whatever
- * prompt cache that prefix already warmed) plus one ephemeral user message
- * asking for a one-sentence status. The result never touches the real
- * session/context — it only ever reaches the UI via `ctx.ui.setWorkingMessage`.
+ * from `seqagent/index.ts` — both now share the actual prompt/complete()
+ * logic via `../lib/summary-status.ts`. On the first agent turn, and every
+ * SUMMARY_INTERVAL_TURNS turns after, it fires a standalone `complete()`
+ * call using the exact message prefix the model just saw (so it reuses
+ * whatever prompt cache that prefix already warmed) plus one ephemeral user
+ * message asking for a one-sentence status. The result never touches the
+ * real session/context — it only ever reaches the UI via
+ * `ctx.ui.setWorkingMessage`.
  *
  * `context` fires *upstream* of message conversion. pi-agent-core's
  * documented pipeline is `AgentMessage[] -> transformContext() ->
@@ -38,36 +40,11 @@
  * `role: "custom"`. Hence `convertToLlm(lastMessages)` at the call site
  * rather than a cast.
  */
-import type { Message } from "@earendil-works/pi-ai";
-import { complete } from "@earendil-works/pi-ai/compat";
 import { convertToLlm } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { buildSummaryPrompt, requestSummaryText, SUMMARY_INTERVAL_TURNS } from "../lib/summary-status.ts";
 
-const SUMMARY_INTERVAL_TURNS = 3; // configurable cadence
 const SUMMARY_MAX_CHARS = 80;
-const SUMMARY_PROMPT_BASE =
-  "Write a 5 or less word high-level summary describing what you are currently doing. Only state *what* you are doing, not why, how, describing the problem itself.\n\n" +
-  "Output a cold, third-person perspective fragment. High-level only — no low-level details.\n\n" +
-  "No first-person (I, we, my, our). No conversational text — no 'Let me', 'That's odd', 'Success!', 'Let's see', 'I need to'. No greetings.\n\n" +
-  "Bad: 'I found the config file and am checking it'\n" +
-  "Good: 'Config file located, verifying settings'\n" +
-  "Bad: 'Let me look into why the program is segfaulting'\n" +
-  "Good: 'Investigating segfault'\n" +
-  "Bad: 'It looks like bc_rescan_target_files and foo_bar are not exported'\n" +
-  "Good: 'Investigating missing functions'\n" +
-  "Bad: 'Now let me look at the remaining critical areas - how the 'complicated_function' handles some operation.'\n" +
-  "Good: 'Investigating remaining critical areas.'";
-
-// Folds the previous summary in so that repeated polls of the same task
-// converge on identical wording instead of rephrasing it every cadence tick
-// (e.g. "Investigating segfault" vs "Debugging crash" for the same work).
-function buildSummaryPrompt(lastSummary: string | undefined): string {
-  if (!lastSummary) return SUMMARY_PROMPT_BASE;
-  return (
-    SUMMARY_PROMPT_BASE +
-    `\n\nYour previous summary was: "${lastSummary}". If still working on the same task, repeat it verbatim. Only write a new summary if the task has genuinely changed.`
-  );
-}
 
 interface TaskCounts {
   total: number;
@@ -116,40 +93,10 @@ export default function (pi: ExtensionAPI) {
   });
 
   const requestSummary = async (ctx: ExtensionContext, promptText: string) => {
-    try {
-      const model = ctx.model;
-      if (!model) return;
-      const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
-      if (!auth.ok) return;
-
-      const activeNames = new Set(pi.getActiveTools());
-      const tools = pi.getAllTools()
-        .filter((t) => activeNames.has(t.name))
-        .map((t) => ({ name: t.name, description: t.description, parameters: t.parameters }));
-
-      const messages: Message[] = [
-        ...convertToLlm(lastMessages),
-        { role: "user", content: [{ type: "text", text: promptText }], timestamp: Date.now() },
-      ];
-
-      const response = await complete(
-        model,
-        { systemPrompt: ctx.getSystemPrompt(), messages, tools },
-        { apiKey: auth.apiKey, headers: auth.headers, env: auth.env, reasoning: "off", maxTokens: 32, signal: ctx.signal },
-      );
-
-      const text = response.content
-        .filter((c): c is { type: "text"; text: string } => c.type === "text")
-        .map((c) => c.text)
-        .join(" ")
-        .trim();
-
-      if (text) {
-        currentSummary = text;
-        refreshWorkingMessage(ctx);
-      }
-    } catch {
-      // best-effort; never disrupt the real turn
+    const text = await requestSummaryText(pi, ctx, convertToLlm(lastMessages), promptText);
+    if (text) {
+      currentSummary = text;
+      refreshWorkingMessage(ctx);
     }
   };
 

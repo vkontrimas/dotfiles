@@ -10,7 +10,6 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { Message } from "@earendil-works/pi-ai";
-import { complete } from "@earendil-works/pi-ai/compat";
 import {
   type ExtensionAPI,
   type ExtensionContext,
@@ -20,6 +19,7 @@ import {
 import { Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { type AgentConfig, discoverAgents } from "./agents.ts";
+import { buildSummaryPrompt, requestSummaryText, SUMMARY_INTERVAL_TURNS } from "../lib/summary-status.ts";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -597,30 +597,6 @@ export default function (pi: ExtensionAPI) {
   // loaded globally for every `pi` invocation, including seqagent's children.
 
   if (process.env.SEQAGENT_SUBAGENT === "1") {
-    const SUMMARY_INTERVAL_TURNS = 3; // configurable cadence
-    const SUMMARY_PROMPT_BASE =
-      "Write a 5 or less word high-level summary describing what you are currently doing. Only state *what* you are doing, not why, how, describing the problem itself.\n\n" +
-      "Output a cold, third-person perspective fragment. High-level only — no low-level details.\n\n" +
-      "No first-person (I, we, my, our). No conversational text — no 'Let me', 'That's odd', 'Success!', 'Let's see', 'I need to'. No greetings.\n\n" +
-      "Bad: 'I found the config file and am checking it'\n" +
-      "Good: 'Config file located, verifying settings'\n" +
-      "Bad: 'Let me look into why the program is segfaulting'\n" +
-      "Good: 'Investigating segfault'\n" +
-      "Bad: 'It looks like bc_rescan_target_files and foo_bar are not exported'\n" +
-      "Good: 'Investigating missing functions'\n" +
-      "Bad: 'Now let me look at the remaining critical areas - how the 'complicated_function' handles some operation.'\n" +
-      "Good: 'Investigating remaining critical areas.'";
-
-    // Folds the previous summary in so that repeated polls of the same task
-    // converge on identical wording instead of rephrasing it every cadence tick.
-    const buildSummaryPrompt = (lastSummary: string | undefined): string => {
-      if (!lastSummary) return SUMMARY_PROMPT_BASE;
-      return (
-        SUMMARY_PROMPT_BASE +
-        `\n\nYour previous summary was: "${lastSummary}". If still working on the same task, repeat it verbatim. Only write a new summary if the task has genuinely changed.`
-      );
-    };
-
     let lastMessages: Message[] = [];
     let turnsSinceSummary = 0;
     let summarizedOnce = false;
@@ -632,40 +608,10 @@ export default function (pi: ExtensionAPI) {
     });
 
     const requestSummary = async (ctx: ExtensionContext, promptText: string) => {
-      try {
-        const model = ctx.model;
-        if (!model) return;
-        const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
-        if (!auth.ok) return;
-
-        const activeNames = new Set(pi.getActiveTools());
-        const tools = pi.getAllTools()
-          .filter((t) => activeNames.has(t.name))
-          .map((t) => ({ name: t.name, description: t.description, parameters: t.parameters }));
-
-        const messages: Message[] = [
-          ...lastMessages,
-          { role: "user", content: [{ type: "text", text: promptText }], timestamp: Date.now() },
-        ];
-
-        const response = await complete(
-          model,
-          { systemPrompt: ctx.getSystemPrompt(), messages, tools },
-          { apiKey: auth.apiKey, headers: auth.headers, env: auth.env, reasoning: "off", maxTokens: 32, signal: ctx.signal },
-        );
-
-        const text = response.content
-          .filter((c): c is { type: "text"; text: string } => c.type === "text")
-          .map((c) => c.text)
-          .join(" ")
-          .trim();
-
-        if (text) {
-          lastSummaryText = text;
-          console.error(JSON.stringify({ type: "seqagent_summary", text }));
-        }
-      } catch {
-        // best-effort; never disrupt the real turn
+      const text = await requestSummaryText(pi, ctx, lastMessages, promptText);
+      if (text) {
+        lastSummaryText = text;
+        console.error(JSON.stringify({ type: "seqagent_summary", text }));
       }
     };
 
