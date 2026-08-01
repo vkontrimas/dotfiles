@@ -240,6 +240,7 @@ async function runAgent({ agent, task, cwd, signal, onUpdate, currentModel }: Ru
         env: { ...process.env, SEQAGENT_SUBAGENT: "1" },
       });
       let buf = "";
+      let errBuf = "";
       let aborted = false;
 
       const parse = (line: string) => {
@@ -270,10 +271,27 @@ async function runAgent({ agent, task, cwd, signal, onUpdate, currentModel }: Ru
           result.messages.push(ev.message as Message);
           emit();
         }
-        if (ev.type === "seqagent_summary" && typeof ev.text === "string") {
-          result.summary = ev.text;
-          emit();
+      };
+
+      // Live activity summaries come through stderr, not stdout — pi's own
+      // --mode json writer owns stdout, and console.log()'d summary lines
+      // from the child's SEQAGENT_SUBAGENT hook get raced/dropped by it in
+      // practice. stderr is untouched by pi in JSON mode, so it's the only
+      // reliable side channel. Each line is either our JSON marker (consumed,
+      // not shown as an error) or genuine diagnostic text (kept in result.stderr).
+      const parseErrLine = (line: string) => {
+        if (!line.trim()) return;
+        try {
+          const ev = JSON.parse(line);
+          if (ev.type === "seqagent_summary" && typeof ev.text === "string") {
+            result.summary = ev.text;
+            emit();
+            return;
+          }
+        } catch {
+          // not our marker — fall through to raw diagnostic text
         }
+        result.stderr += `${line}\n`;
       };
 
       proc.stdout.on("data", (d) => {
@@ -282,8 +300,17 @@ async function runAgent({ agent, task, cwd, signal, onUpdate, currentModel }: Ru
         buf = lines.pop() || "";
         for (const l of lines) parse(l);
       });
-      proc.stderr.on("data", (d) => { result.stderr += d.toString(); });
-      proc.on("close", (code) => { if (buf.trim()) parse(buf); resolve(code ?? 0); });
+      proc.stderr.on("data", (d) => {
+        errBuf += d.toString();
+        const lines = errBuf.split("\n");
+        errBuf = lines.pop() || "";
+        for (const l of lines) parseErrLine(l);
+      });
+      proc.on("close", (code) => {
+        if (buf.trim()) parse(buf);
+        if (errBuf.trim()) parseErrLine(errBuf);
+        resolve(code ?? 0);
+      });
       proc.on("error", () => resolve(1));
 
       if (signal) {
@@ -597,7 +624,7 @@ export default function (pi: ExtensionAPI) {
           .join(" ")
           .trim();
 
-        if (text) console.log(JSON.stringify({ type: "seqagent_summary", text }));
+        if (text) console.error(JSON.stringify({ type: "seqagent_summary", text }));
       } catch {
         // best-effort; never disrupt the real turn
       }
