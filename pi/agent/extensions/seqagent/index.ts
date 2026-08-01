@@ -598,12 +598,12 @@ export default function (pi: ExtensionAPI) {
 
   if (process.env.SEQAGENT_SUBAGENT === "1") {
     const SUMMARY_INTERVAL_TURNS = 3; // configurable cadence
-    const SUMMARY_PROMPT =
+    const SUMMARY_PROMPT_BASE =
       "Write a 5 or less word high-level summary describing what you are currently doing. Only state *what* you are doing, not why, how, describing the problem itself.\n\n" +
       "Output a cold, third-person perspective fragment. High-level only — no low-level details.\n\n" +
       "No first-person (I, we, my, our). No conversational text — no 'Let me', 'That's odd', 'Success!', 'Let's see', 'I need to'. No greetings.\n\n" +
       "Bad: 'I found the config file and am checking it'\n" +
-      "Good: 'Config file located, verifying settings'\n" + 
+      "Good: 'Config file located, verifying settings'\n" +
       "Bad: 'Let me look into why the program is segfaulting'\n" +
       "Good: 'Investigating segfault'\n" +
       "Bad: 'It looks like bc_rescan_target_files and foo_bar are not exported'\n" +
@@ -611,10 +611,21 @@ export default function (pi: ExtensionAPI) {
       "Bad: 'Now let me look at the remaining critical areas - how the 'complicated_function' handles some operation.'\n" +
       "Good: 'Investigating remaining critical areas.'";
 
+    // Folds the previous summary in so that repeated polls of the same task
+    // converge on identical wording instead of rephrasing it every cadence tick.
+    const buildSummaryPrompt = (lastSummary: string | undefined): string => {
+      if (!lastSummary) return SUMMARY_PROMPT_BASE;
+      return (
+        SUMMARY_PROMPT_BASE +
+        `\n\nYour previous summary was: "${lastSummary}". If still working on the same task, repeat it verbatim. Only write a new summary if the task has genuinely changed.`
+      );
+    };
+
     let lastMessages: Message[] = [];
     let turnsSinceSummary = 0;
     let summarizedOnce = false;
     let agentEnded = false;
+    let lastSummaryText: string | undefined;
 
     pi.on("context", (event) => {
       lastMessages = event.messages as Message[];
@@ -649,7 +660,10 @@ export default function (pi: ExtensionAPI) {
           .join(" ")
           .trim();
 
-        if (text) console.error(JSON.stringify({ type: "seqagent_summary", text }));
+        if (text) {
+          lastSummaryText = text;
+          console.error(JSON.stringify({ type: "seqagent_summary", text }));
+        }
       } catch {
         // best-effort; never disrupt the real turn
       }
@@ -659,6 +673,7 @@ export default function (pi: ExtensionAPI) {
     // turn_end (via `!summarizedOnce` in the turn_end handler below).
     pi.on("agent_start", () => {
       agentEnded = false;
+      lastSummaryText = undefined;
     });
 
     pi.on("agent_end", () => {
@@ -679,7 +694,7 @@ export default function (pi: ExtensionAPI) {
       // concurrent connections cleanly — overlapping requests were observed
       // causing intermittent "write: broken pipe" 500s from bifrost (stale
       // pooled connection reused while the slot was mid-generation).
-      await requestSummary(ctx, SUMMARY_PROMPT);
+      await requestSummary(ctx, buildSummaryPrompt(lastSummaryText));
     });
   }
 }
