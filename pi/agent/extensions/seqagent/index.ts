@@ -591,12 +591,16 @@ export default function (pi: ExtensionAPI) {
   if (process.env.SEQAGENT_SUBAGENT === "1") {
     const SUMMARY_INTERVAL_TURNS = 3; // configurable cadence
     const SUMMARY_PROMPT =
-      "8 words max. High-level only — no low-level details. " +
-      "Cold, third-person observation. No conversational text. Fragment.";
+      "8 words max. High-level status fragment only.\n\n" +
+      "Rules: third-person. No first-person (I, we, my, our). No conversational text — no 'That's odd', 'Success!', 'Let's see', 'I need to'. No greetings. No low-level details.\n\n" +
+      "Bad: 'I found the config file and am checking it'\n" +
+      "Good: 'Config file located, verifying settings'";
     function buildKickoffPrompt(requestText: string): string {
       return (
-        "8 words max. High-level only — no low-level details. " +
-        "Cold, third-person observation. No greeting. Fragment.\n\n" +
+        "8 words max. High-level status fragment only.\n\n" +
+        "Rules: third-person. No first-person (I, we, my, our). No conversational text. No greetings. No low-level details.\n\n" +
+        "Bad: 'I found the config file and am checking it'\n" +
+        "Good: 'Config file located, verifying settings'\n\n" +
         `Task: "${requestText}"`
       );
     }
