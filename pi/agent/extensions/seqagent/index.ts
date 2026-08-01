@@ -308,7 +308,10 @@ export default function (pi: ExtensionAPI) {
         const currentModel = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
         const result = await runAgent({
           agent, task: t.task, cwd, signal,
-          onUpdate: () => emit(),
+          onUpdate: (live) => {
+            md.steps[i] = { ...live, status: "running" };
+            emit();
+          },
           currentModel,
         }).catch((err) => {
           md.steps[i].status = "error";
