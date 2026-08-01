@@ -378,11 +378,16 @@ export default function (pi: ExtensionAPI) {
       `Delegate focused work to subagents. Each runs in a fresh, isolated context and they share no state — pass several tasks to run them one after another. Available agents: ${agentList || "none"}.`,
       "- Spawn when the task needs 3+ files, a search across directories, or more than ~5 tool calls here, and for broad questions: 'how does X work?', 'map the codebase', 'find all uses of Y'",
       "- Skip for narrow lookups (one known file, a function signature, a simple grep) and for anything that depends on context from this conversation",
+      "- Example: 'how does the retry logic work?' → spawn explore. 'what does retry.ts:34 do?' → read it yourself, it's one file",
       "- Spawn when you're stuck: the same fix tried twice, or two failed attempts at one bug. A fresh context isn't anchored to your wrong theory — hand `investigate` the symptom and what you already ruled out",
+      "- Example: added a null check, still crashes, tried a different guard, still crashes → spawn investigate with the crash and both attempts, not a third guess",
       "- Use explore/investigate before planning changes; research for external info; review only for large changes (10+ files, ~10k+ LOC, architectural shifts), scoped to the relevant area rather than 'review everything'",
+      "- Example: 'review my 3-file auth change' → do it yourself. 'review this 12-file PR that adds a new module' → spawn review scoped to 'the new module', not 'review everything'",
       "- `worker` is the only agent that can change anything; the rest are read-only, so asking them to edit, delete, or run a build gets you a plan, not the work",
       "- Delegate self-contained work to `worker`: a fix you've already diagnosed, a mechanical refactor, removing a feature, adding tests. Do narrow edits yourself. It has no context from here, so spell out which files, what to do, and how to verify",
+      "- Example: 'add a null guard at auth.ts:42' (one line, already diagnosed) → do it yourself. 'apply that same guard pattern across all 9 handlers in api/' (diagnosed but mechanical and multi-file) → worker",
       "- Batch worker tasks only if they're independent — a later task can't build on an earlier one's output, so staged work (investigate, then fix) needs a second call once you've read the first report",
+      "- Example: two unrelated typo fixes → one seqagent call, two worker tasks. 'find the leak, then fix it' → two separate seqagent calls, since the fix needs the investigation's output first",
     ],
     parameters: Type.Object({
       tasks: Type.Array(TaskItem, {
