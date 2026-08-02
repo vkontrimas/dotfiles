@@ -67,14 +67,17 @@ services:
       - -ngl
       - "99"
       # Total budget shared across slots, NOT per-slot — same semantics as the
-      # 27B config. 8192/2 = 4096 per slot.
+      # 27B config. 16384/4 = 4096 per slot.
       #
-      # Was 16384. That was sized as pure slack, back when a poll ran a few
-      # hundred tokens and the window was ~9x larger than anything that could
-      # reach it. The transcript budget in lib/summary-status.ts is now sized
-      # deliberately against this number rather than hiding under it: ~3020
-      # tokens of transcript plus a 167-token system prompt, wrapper and the
-      # 32-token reply lands a full poll near 3250, about 80% of a slot.
+      # Per-slot size is the number that matters and it is unchanged at 4096;
+      # the total moved 8192 -> 16384 only to pay for two more slots (see -np
+      # below). The transcript budget in lib/summary-status.ts is sized
+      # deliberately against the per-slot figure rather than hiding under it:
+      # ~3020 tokens of transcript plus a 167-token system prompt, wrapper and
+      # the 32-token reply lands a full poll near 3250, about 80% of a slot.
+      #
+      # Cheap, for the reason below: 8192 extra tokens of total budget costs
+      # ~51 MiB of GPU0 at 6.375 KiB/token, against ~6.5 GB free.
       #
       # Halving this is close to free. qwen35 is hybrid — full_attention_interval
       # is 4, so only 6 of 24 blocks keep a per-token KV (the other 18 are SSM
@@ -91,13 +94,24 @@ services:
       # maximal transcript would exceed the slot. That degrades to a dropped
       # status line (requestSummaryText swallows the error), never to a stall.
       - --ctx-size
-      - "8192"
-      # Two slots so a seqagent subagent's summary can't queue behind the main
-      # agent's. This is why the plain GGUF is used rather than the -MTP-
-      # variant: MTP speculative decoding requires -np 1, and for a 32-token
-      # output the drafting win is negligible next to never blocking.
+      - "16384"
+      # One slot per concurrent consumer, so none of them queue behind another.
+      # There are four: the main agent's status summary and its `nag`
+      # classification, plus the same pair inside a seqagent subagent (both
+      # extensions load in the spawned child too).
+      #
+      # Was 2, sized when the status summary was the only consumer. The `nag`
+      # extension doubled that — it classifies every user-facing assistant
+      # message on this same server. Leaving it at 2 would have put a nag behind
+      # a summary poll and vice versa, which matters more than it sounds: the
+      # nag is deciding whether to interrupt a trajectory, and a late verdict is
+      # a verdict about work the agent has already moved past.
+      #
+      # This is also why the plain GGUF is used rather than the -MTP- variant:
+      # MTP speculative decoding requires -np 1, and for a 4-32 token output the
+      # drafting win is negligible next to never blocking.
       - -np
-      - "2"
+      - "4"
       - -b
       - "2048"
       - -ub

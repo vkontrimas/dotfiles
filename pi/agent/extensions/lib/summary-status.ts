@@ -371,27 +371,58 @@ export async function requestSummaryText(
   lastSummary: string | undefined,
   signal?: AbortSignal,
 ): Promise<string | undefined> {
+  const transcript = renderTranscript(priorMessages);
+  if (!transcript) return undefined;
+
+  const previous = lastSummary ? `PREVIOUS LABEL: ${lastSummary}\n\n` : "";
+  return completeOnSummariser(ctx, SUMMARY_SYSTEM_PROMPT, `${previous}Transcript:\n${transcript}\n\nLabel:`, {
+    maxTokens: 32,
+    signal,
+  });
+}
+
+// The generic form of the above: one ephemeral round-trip to the dedicated 2B,
+// with the same never-throws contract. Extracted so a second consumer doesn't
+// have to re-derive model resolution, auth and the response-flattening — the
+// `nag` extension classifies messages on this same server.
+//
+// Kept in this module rather than a new lib file purely because everything it
+// needs (the provider/model constants, resolveSummaryModel) already lives here
+// and is deliberately module-private. The module remains stateless, so each
+// extension re-evaluating its own jiti copy is still harmless.
+//
+// Callers must own their own abort signal for the same reason documented above
+// requestSummaryText: ctx.signal belongs to the in-progress generation and dies
+// the moment streaming stops, which is usually before an unawaited side-channel
+// call comes back.
+export async function completeOnSummariser(
+  ctx: ExtensionContext,
+  systemPrompt: string,
+  userText: string,
+  opts: { maxTokens?: number; signal?: AbortSignal } = {},
+): Promise<string | undefined> {
   try {
     const model = resolveSummaryModel(ctx);
     if (!model) return undefined;
     const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
     if (!auth.ok) return undefined;
 
-    const transcript = renderTranscript(priorMessages);
-    if (!transcript) return undefined;
-
-    const previous = lastSummary ? `PREVIOUS LABEL: ${lastSummary}\n\n` : "";
-    const promptText = `${previous}Transcript:\n${transcript}\n\nLabel:`;
-
     const response = await complete(
       model,
       {
-        systemPrompt: SUMMARY_SYSTEM_PROMPT,
-        messages: [{ role: "user", content: [{ type: "text", text: promptText }], timestamp: Date.now() }],
-        // No tools, deliberately: the summariser must never call anything, and
-        // the agent's 15 schemas were 13.1K chars of the old request.
+        systemPrompt,
+        messages: [{ role: "user", content: [{ type: "text", text: userText }], timestamp: Date.now() }],
+        // No tools, deliberately: this model must never call anything, and the
+        // agent's 15 schemas were 13.1K chars of the old request.
       },
-      { apiKey: auth.apiKey, headers: auth.headers, env: auth.env, reasoning: "off", maxTokens: 32, signal },
+      {
+        apiKey: auth.apiKey,
+        headers: auth.headers,
+        env: auth.env,
+        reasoning: "off",
+        maxTokens: opts.maxTokens ?? 32,
+        signal: opts.signal,
+      },
     );
 
     return response.content
