@@ -23,7 +23,11 @@
  * slot is never touched at all.
  *
  * Measured effect: a poll went from ~65,000 prompt tokens (full system prompt
- * 18.3K chars + 15 tool schemas 13.1K chars + entire history) to ~220 tokens.
+ * 18.3K chars + 15 tool schemas 13.1K chars + entire history) to ~220 tokens
+ * at the original 2000-char transcript budget. The budget has since been
+ * widened (see TRANSCRIPT_MAX_CHARS), so a full poll now runs closer to ~900 —
+ * still three orders of magnitude off the original, and on a server whose slot
+ * nothing else contends for.
  *
  * Plain relative import rather than a declared package dependency: pi's
  * extension loader gives each extension its own jiti instance with
@@ -36,7 +40,13 @@ import type { Message } from "@earendil-works/pi-ai";
 import { complete } from "@earendil-works/pi-ai/compat";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-export const SUMMARY_INTERVAL_TURNS = 3; // configurable cadence
+// Every other turn. This was 3 while the poll shared the agent's single-slot
+// server and callers awaited it — each tick was latency on the critical path,
+// so it was worth spacing out. Neither is true now: the poll goes to the
+// dedicated 2B server and both callers fire it without awaiting, so the only
+// cost of a tighter cadence is 2B tokens. A caller already in flight skips its
+// tick, so this raises how often a poll *starts*, not how many run at once.
+export const SUMMARY_INTERVAL_TURNS = 2;
 
 // The dedicated summariser, as registered in pi/agent/models.json. Routed
 // through Bifrost (:11435 -> :11437) rather than straight at the container, so
@@ -88,8 +98,20 @@ Form examples (do not reuse the wording):
 // to raw message objects, because that's what actually reaches the model —
 // a 50KB tool result renders to one capped line, so counting the raw message
 // would wildly over-charge it and drop useful earlier context.
-const TRANSCRIPT_MAX_CHARS = 2000;
-const TRANSCRIPT_MAX_LINES = 16;
+// Widened from 2000/16. Not a server-side constraint either way: the
+// summariser gives 8192 tokens per slot (--ctx-size 16384, -np 2) and even the
+// wider budget renders to roughly 900, so there is a lot of slack. The real
+// limit is the 2B's attention — the prompt is built so the transcript is the
+// last and most salient thing in the request, and a transcript long enough to
+// span two unrelated tasks invites a label for the older one. These values
+// cover more of a single stretch of work without reaching back that far.
+//
+// The per-line caps are deliberately unchanged, so the extra budget buys more
+// *events* rather than longer lines: a 200-char slice already identifies what
+// a message is about, and widening it would spend the increase on tool-result
+// prose, which is the least useful text in here.
+const TRANSCRIPT_MAX_CHARS = 3500;
+const TRANSCRIPT_MAX_LINES = 28;
 const LINE_MAX_CHARS = 200;
 
 function collapse(text: string, limit = LINE_MAX_CHARS): string {

@@ -185,7 +185,7 @@ export default function (pi: ExtensionAPI) {
     summarizedOnce = true;
     // Deliberately NOT awaited. pi awaits turn_end handlers before issuing the
     // next turn's request, so awaiting this put the summariser's round-trip
-    // directly on the critical path of every third turn. That was unavoidable
+    // directly on the critical path of every summary turn. That was unavoidable
     // when it shared the agent's single-slot (-np 1) server — an overlapping
     // request would have fought the live generation for the slot — but it now
     // has its own 2B server with two slots, so there is nothing to collide
