@@ -121,15 +121,28 @@ Form examples (do not reuse the wording):
 // transcript would exceed the slot, at which point the poll fails and the
 // status line is simply not updated — requestSummaryText swallows it.
 //
-// The line cap scales with the char budget so neither becomes the sole binding
-// constraint: on tool-heavy stretches lines render at ~40-80 chars and the line
-// cap binds first, on prose-heavy ones the char cap does. Keeping the ratio
-// means widening one doesn't quietly leave the other in charge.
+// The same 9000 is now spent on FEWER, RICHER lines rather than many thin
+// ones: 72x200 became 30x500. The earlier note here argued the opposite — that
+// the budget should buy more *events* — which is a real trade, but a 200-char
+// slice turned out to truncate exactly the part that identifies the work (the
+// tail of a path, the flag that says what a command was for) while a 30-event
+// window still comfortably spans a stretch of one task.
 //
-// LINE_MAX_CHARS is deliberately NOT scaled: the extra budget should buy more
-// *events*, not longer lines. A 200-char slice already identifies what a
-// message is about, and raising it would spend the increase on tool-result
-// prose, the least useful text in here.
+// TOOL_ARG_MAX_CHARS matters more than LINE_MAX_CHARS for this. Tool calls are
+// most of a transcript and render from their argument values, which were
+// capped separately at 80 — so tool lines came out ~40-80 chars no matter what
+// LINE_MAX_CHARS said, and raising only the line cap would have changed
+// nothing for them. It moves to 300 alongside.
+//
+// Note the two caps interact through the char budget. Lines are gathered
+// backwards until either runs out, so raising the per-line caps means the char
+// budget is reached in fewer lines — the line count falls out of that rather
+// than being imposed. TRANSCRIPT_MAX_LINES is now a ceiling on reach (how far
+// back a summary can see), not the thing that usually binds. The residual risk
+// is under-fill: a stretch of genuinely short lines can no longer reach 9000
+// in 30 of them, so those polls run smaller. That's accepted deliberately —
+// short lines mean there was little to say, and padding the window with more
+// of them is not what makes the label better.
 //
 // WORTH RE-EXAMINING IF LABELS DEGRADE: this is now a transcript ~10x the
 // original, fed to a 2B. Memory is not the risk — attention is. The prompt is
@@ -138,8 +151,9 @@ Form examples (do not reuse the wording):
 // a confident label for the older one. If that shows up, cut this budget; do
 // not reach for the context size, which is not what's binding.
 const TRANSCRIPT_MAX_CHARS = 9000;
-const TRANSCRIPT_MAX_LINES = 72;
-const LINE_MAX_CHARS = 200;
+const TRANSCRIPT_MAX_LINES = 30;
+const LINE_MAX_CHARS = 500;
+const TOOL_ARG_MAX_CHARS = 300;
 
 function collapse(text: string, limit = LINE_MAX_CHARS): string {
   const flat = text.replace(/\s+/g, " ").trim();
@@ -169,7 +183,10 @@ function renderMessage(message: Message): string[] {
       case "toolCall": {
         // Argument values, not keys, are what identify the action ("Read
         // server-context.cpp" beats "Read(file_path)"), so join the values.
-        const args = collapse(Object.values(block.arguments ?? {}).map((v) => String(v)).join(" "), 80);
+        // Capped separately from LINE_MAX_CHARS because tool calls dominate a
+        // transcript: at the old 80 this was the real constraint on how much a
+        // line carried, and the line cap never got a look in.
+        const args = collapse(Object.values(block.arguments ?? {}).map((v) => String(v)).join(" "), TOOL_ARG_MAX_CHARS);
         lines.push(`[tool] ${block.name}(${args})`);
         break;
       }
