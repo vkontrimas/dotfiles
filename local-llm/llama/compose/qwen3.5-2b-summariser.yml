@@ -1,0 +1,121 @@
+# ===========================================================================
+# Qwen3.5-2B-Q8_0 — dedicated status-summary endpoint, GPU0, port 11437.
+#
+# WHY THIS EXISTS: the working-status and seqagent extensions poll the model
+# every few turns for a 5-word "what am I doing" status line. Those polls used
+# to go to the main 27B server (qwen3.6-27b-llama-q5km-mtp.yml, :11434), which
+# runs a SINGLE slot (-np 1). Any request there takes the slot, so the live
+# agent conversation has to be swapped out and back — and on a hybrid
+# DeltaNet/full-attention model there is no cheap rollback for the recurrent
+# state, so in practice that meant a full reprefill of a 100K+ token context
+# (measured 2026-08-02: 116-126s at ~100K tokens, 341s at 201K). Shrinking the
+# summary request doesn't help; the swap cost is paid regardless of request
+# size. The only real fix is to never touch that slot, hence this server.
+#
+# SIZING: Q8_0 rather than a bigger model at a heavier quant. At 2B,
+# quantization error bites much harder than it does at 27B (where Q5_K_M is
+# still near-lossless), and "write a cold third-person 5-word fragment" is not
+# a capability-bound task — fidelity beats parameter count here. Budget:
+# ~2.01GB weights + ~100MB KV at this context + ~300-400MB compute buffers
+# = ~2.5GB total, against ~9.3GB free on GPU0 at the time of writing.
+#
+# GPU0 BUDGET NOTE: qwen3.6-27b-llama-q5km-mtp.yml's header records GPU0 being
+# held at ~10GB free deliberately, as spillover headroom for the 27B's layer
+# split (-ts "0.34,0.66"). This takes ~2.5GB of that. The current split is
+# stable and unaffected, but a future -ts re-ladder has correspondingly less
+# room to grow into — re-check GPU0 free space before widening that split.
+#
+# NOT the retired scout: local-llm/llama/compose/qwen3.5-4b-scout.yml (and
+# archive/gpu-stack.yml.bak) were a 4-slot general-purpose subagent pool on
+# :11436 whose weights are no longer on disk. This is a different, much
+# narrower job — one tiny prompt shape, 32 output tokens — so it gets its own
+# file and its own port rather than reviving that.
+# ===========================================================================
+# Explicit project name so this file is isolated from the other compose files
+# in this directory. Without it every file here defaults to the directory name
+# ("compose") as its project, which means they share one project: bringing this
+# one up warns about the 27B as an orphan, and a `down --remove-orphans` here
+# would take the 27B down with it. That is exactly the server this whole setup
+# exists to keep warm.
+name: llama-summariser
+
+services:
+  llama-qwen35-2b-summariser:
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+    container_name: llama-qwen35-2b-summariser
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:11437:8080"
+    volumes:
+      - /home/kinetic/data/llm-models/qwen3.5-2b-gguf/unsloth:/models:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              # GPU0 only. GPU1 is saturated by the 27B (~880MB free) and is
+              # the card that must stay untouched.
+              device_ids: ["0"]
+              capabilities: [gpu]
+    command:
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --model
+      - /models/Qwen3.5-2B-Q8_0.gguf
+      - -ngl
+      - "99"
+      # Total budget shared across slots, NOT per-slot — same semantics as the
+      # 27B config. 16384/2 = 8192 per slot, which is far more than a summary
+      # request needs (a truncated snippet plus the prompt runs a few hundred
+      # tokens); the slack is there so an oversized tool result in the snippet
+      # can't overflow.
+      - --ctx-size
+      - "16384"
+      # Two slots so a seqagent subagent's summary can't queue behind the main
+      # agent's. This is why the plain GGUF is used rather than the -MTP-
+      # variant: MTP speculative decoding requires -np 1, and for a 32-token
+      # output the drafting win is negligible next to never blocking.
+      - -np
+      - "2"
+      - -b
+      - "2048"
+      - -ub
+      - "512"
+      - -ctk
+      - q8_0
+      - -ctv
+      - q8_0
+      - -fa
+      - "on"
+      # Host-RAM prompt cache, deliberately tiny. Entries here are a few
+      # hundred tokens, and the box only has ~24GB RAM available with swap
+      # already in use — the 27B's 16GB --cache-ram is the one that matters.
+      - --cache-ram
+      - "512"
+      - --jinja
+      # Thinking OFF. A status line needs no reasoning trace, and suppressing
+      # it removes both the latency and the risk of think tags leaking into a
+      # 32-token budget. Note this is the opposite of the 27B config, which
+      # runs --reasoning on --reasoning-preserve.
+      - --reasoning
+      - "off"
+      - --reasoning-format
+      - deepseek
+      # Low temperature on purpose: buildSummaryPrompt() folds the previous
+      # summary in and asks for it back verbatim when the task hasn't changed,
+      # so sampling stability is what keeps the status line from flickering
+      # between rewordings of the same work.
+      - --temp
+      - "0.2"
+      - --top-p
+      - "0.9"
+      - --top-k
+      - "20"
+      - --min-p
+      - "0"
+      - --presence-penalty
+      - "0.0"
+      - --repeat-penalty
+      - "1.0"

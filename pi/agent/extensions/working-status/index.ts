@@ -21,12 +21,19 @@
  * The summary segment reuses the ephemeral side-channel completion pattern
  * from `seqagent/index.ts` — both now share the actual prompt/complete()
  * logic via `../lib/summary-status.ts`. On the first agent turn, and every
- * SUMMARY_INTERVAL_TURNS turns after, it fires a standalone `complete()`
- * call using the exact message prefix the model just saw (so it reuses
- * whatever prompt cache that prefix already warmed) plus one ephemeral user
- * message asking for a one-sentence status. The result never touches the
- * real session/context — it only ever reaches the UI via
- * `ctx.ui.setWorkingMessage`.
+ * SUMMARY_INTERVAL_TURNS turns after, it renders a bounded text transcript of
+ * recent activity and asks a small dedicated model for a one-line label. The
+ * result never touches the real session/context — it only ever reaches the UI
+ * via `ctx.ui.setWorkingMessage`.
+ *
+ * That call used to go to the agent's own model, passing the entire message
+ * prefix, on the theory that an identical prefix rides the already-warm
+ * prompt cache for free. It doesn't: on the local llama.cpp backend the
+ * single slot (-np 1) has to swap the live conversation out, and a hybrid
+ * recurrent model can't roll that back cheaply, so every poll cost a
+ * multi-minute full reprefill. Shrinking the request didn't fix it — the swap
+ * is what costs, not the size — so the poll now goes to a separate tiny
+ * server entirely. `../lib/summary-status.ts` carries the full reasoning.
  *
  * `context` fires *upstream* of message conversion. pi-agent-core's
  * documented pipeline is `AgentMessage[] -> transformContext() ->
@@ -42,7 +49,7 @@
  */
 import { convertToLlm } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { buildSummaryPrompt, requestSummaryText, SUMMARY_INTERVAL_TURNS } from "../lib/summary-status.ts";
+import { requestSummaryText, SUMMARY_INTERVAL_TURNS } from "../lib/summary-status.ts";
 
 const SUMMARY_MAX_CHARS = 80;
 
@@ -61,6 +68,10 @@ export default function (pi: ExtensionAPI) {
   let currentSummary: string | undefined;
   let taskCounts: TaskCounts = { total: 0, remaining: 0 };
   let agentEnded = false;
+  // Fire-and-forget bookkeeping (see requestSummary below).
+  let runController: AbortController | undefined;
+  let runGeneration = 0;
+  let summaryInFlight = false;
 
   pi.events.on("tasks:updated", (data) => {
     taskCounts = data as TaskCounts;
@@ -92,11 +103,38 @@ export default function (pi: ExtensionAPI) {
     lastMessages = event.messages;
   });
 
-  const requestSummary = async (ctx: ExtensionContext, promptText: string) => {
-    const text = await requestSummaryText(pi, ctx, convertToLlm(lastMessages), promptText);
-    if (text) {
+  // Fired without awaiting, so it has to defend itself on the way back in.
+  // Four hazards, each handled below:
+  //
+  //   1. Late landing. The reply can arrive after agent_end/agent_settled has
+  //      already reset the status line; writing then would put a stale
+  //      "Working... · <summary>" on an idle UI. Guarded by `agentEnded` and
+  //      by aborting `runController`, both re-checked *after* the await.
+  //   2. Wrong run. A reply from the previous agent run must not leak into
+  //      the next one. `runGeneration` is captured before the call and
+  //      compared after; agent_start bumps it.
+  //   3. Out-of-order overwrite. Two in-flight calls could resolve in reverse
+  //      and leave the older label showing. `summaryInFlight` keeps it to one
+  //      at a time, which also stops a stale `currentSummary` being fed back
+  //      in as the PREVIOUS LABEL while a newer one is still pending.
+  //   4. Unhandled rejection. requestSummaryText swallows its own errors, but
+  //      refreshWorkingMessage could throw, and nothing awaits this promise —
+  //      so the whole body is wrapped.
+  const requestSummary = async (ctx: ExtensionContext) => {
+    if (summaryInFlight) return;
+    summaryInFlight = true;
+    const generation = runGeneration;
+    const signal = runController?.signal;
+    try {
+      const text = await requestSummaryText(pi, ctx, convertToLlm(lastMessages), currentSummary, signal);
+      if (!text) return;
+      if (generation !== runGeneration || agentEnded || signal?.aborted) return;
       currentSummary = text;
       refreshWorkingMessage(ctx);
+    } catch {
+      // best-effort: a status line is never worth surfacing an error for
+    } finally {
+      summaryInFlight = false;
     }
   };
 
@@ -105,6 +143,21 @@ export default function (pi: ExtensionAPI) {
     summarizedOnce = false;
     currentSummary = undefined;
     agentEnded = false;
+    // Bumping the generation invalidates any reply still in flight from the
+    // previous run, and aborting its controller stops that request rather
+    // than leaving it to finish into a void.
+    runGeneration++;
+    runController?.abort();
+    runController = new AbortController();
+  };
+
+  // Ends the run's summary work. Called from both agent_end and
+  // agent_settled: agent_end is the earliest point we know no further status
+  // line should be shown, and agent_settled is the backstop in case a run
+  // ends without one (an aborted run, say).
+  const stopRunSummaries = () => {
+    agentEnded = true;
+    runController?.abort();
   };
 
   // Reset state at the start of every agent run. The first summary fires on the
@@ -116,10 +169,12 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("agent_end", () => {
-    agentEnded = true;
+    stopRunSummaries();
   });
 
-  pi.on("turn_end", async (_event, ctx) => {
+  // No longer async: the summary is fired without awaiting, so this handler
+  // does no async work of its own and shouldn't hold up the next turn.
+  pi.on("turn_end", (_event, ctx) => {
     refreshWorkingMessage(ctx); // picks up latest task counts every turn regardless of summary cadence
     if (agentEnded) return;
 
@@ -128,17 +183,24 @@ export default function (pi: ExtensionAPI) {
     if (!due) return;
     turnsSinceSummary = 0;
     summarizedOnce = true;
-    // Awaited (not fire-and-forget): pi awaits turn_end handlers before the
-    // next turn's request goes out, so this guarantees the summary call
-    // never overlaps with a real generation request. The local llama.cpp
-    // backend runs a single inference slot (-np 1) and doesn't tolerate
-    // concurrent connections cleanly — overlapping requests were observed
-    // causing intermittent "write: broken pipe" 500s from bifrost (stale
-    // pooled connection reused while the slot was mid-generation).
-    await requestSummary(ctx, buildSummaryPrompt(currentSummary));
+    // Deliberately NOT awaited. pi awaits turn_end handlers before issuing the
+    // next turn's request, so awaiting this put the summariser's round-trip
+    // directly on the critical path of every third turn. That was unavoidable
+    // when it shared the agent's single-slot (-np 1) server — an overlapping
+    // request would have fought the live generation for the slot — but it now
+    // has its own 2B server with two slots, so there is nothing to collide
+    // with and no reason to make the user wait for it.
+    //
+    // `void` marks the floating promise as intentional; requestSummary owns
+    // all the late-landing and ordering guards.
+    void requestSummary(ctx);
   });
 
   pi.on("agent_settled", (_event, ctx) => {
+    // Before the mode guard: a run that settles without agent_end must still
+    // stop its summaries, and that has nothing to do with whether there's a
+    // TUI to draw into.
+    stopRunSummaries();
     if (ctx.mode !== "tui") return;
     ctx.ui.setWorkingMessage(); // restore default; next run rebuilds fresh
   });

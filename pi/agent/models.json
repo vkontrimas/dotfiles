@@ -1,5 +1,26 @@
 {
   "providers": {
+    "summariser": {
+      "baseUrl": "http://localhost:11435/v1",
+      "api": "openai-completions",
+      "apiKey": "bifrost",
+      "compat": {
+        "supportsDeveloperRole": false,
+        "supportsReasoningEffort": false,
+        "thinkingFormat": "qwen-chat-template"
+      },
+      "models": [
+        {
+          "id": "vllm/qwen3.5-2b-summariser",
+          "name": "Qwen3.5 2B Q8_0 — status-line summariser only (via Bifrost :11435 → :11437, GPU0)",
+          "reasoning": false,
+          "input": ["text"],
+          "contextWindow": 8192,
+          "maxTokens": 256,
+          "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
+        }
+      ]
+    },
     "vllm": {
       "baseUrl": "http://localhost:11434/v1",
       "api": "openai-completions",

@@ -62,6 +62,16 @@
             "url": "http://host.docker.internal:11434",
             "model_name": "qwen3.6-27b-q5km-mtp"
           }
+        },
+        {
+          "name": "qwen35-2b-summariser-local",
+          "value": "",
+          "models": ["qwen3.5-2b-summariser"],
+          "weight": 1.0,
+          "vllm_key_config": {
+            "url": "http://host.docker.internal:11437",
+            "model_name": "qwen3.5-2b-summariser"
+          }
         }
       ],
       "network_config": {

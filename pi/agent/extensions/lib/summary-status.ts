@@ -2,21 +2,35 @@
  * Shared "what am I doing" status-summary helper.
  *
  * Used by working-status/index.ts (main session) and seqagent/index.ts
- * (subagent side-channel) — both poll the model on the same turn cadence
- * with the same low-cost prompt for a one-line status. This holds the parts
- * that don't differ: the prompt text (including folding the previous
- * summary in so repeated polls of the same task converge on stable wording
- * instead of rephrasing every cadence tick) and the standalone ephemeral
- * complete() call itself.
+ * (subagent side-channel) — both poll on the same turn cadence for a one-line
+ * status. This holds everything that doesn't differ: the prompt, the
+ * transcript renderer, model resolution, and the ephemeral complete() call.
  *
- * Plain relative import rather than a declared package dependency (the
- * `pi-tasks`-style `file:../tasks` + `await import()` pattern used
- * elsewhere): pi's extension loader gives each extension its own jiti
- * instance with `moduleCache: false`, so that pattern can't share *live
- * state* across extensions (see working-status/index.ts's header comment).
- * This module is stateless — every export is a pure function — so each
- * extension re-evaluating its own copy is harmless, and a relative import
- * skips the node_modules/package.json bookkeeping entirely.
+ * WHY THIS TALKS TO A DIFFERENT SERVER THAN THE AGENT DOES
+ * -------------------------------------------------------
+ * These polls used to go to the main model. That is fatal on the local
+ * llama.cpp backend, which runs a SINGLE slot (-np 1): any request takes the
+ * slot, so the live agent conversation gets swapped out — and on a hybrid
+ * DeltaNet/full-attention model like Qwen3.6-27B there is no cheap rollback
+ * for the recurrent state, so resuming means a full reprefill of the whole
+ * context (measured 2026-08-02: 116-126s at ~100K tokens, 341s at 201K).
+ *
+ * Critically, shrinking the request does NOT fix this — the swap cost is paid
+ * regardless of how small the poll is. An earlier attempt at truncating the
+ * message history was therefore only a partial mitigation and has been
+ * replaced by this: the poll goes to a dedicated tiny model on its own server
+ * (local-llm/llama/compose/qwen3.5-2b-summariser.yml, :11437), so the main
+ * slot is never touched at all.
+ *
+ * Measured effect: a poll went from ~65,000 prompt tokens (full system prompt
+ * 18.3K chars + 15 tool schemas 13.1K chars + entire history) to ~220 tokens.
+ *
+ * Plain relative import rather than a declared package dependency: pi's
+ * extension loader gives each extension its own jiti instance with
+ * `moduleCache: false`, so the `file:../tasks` + `await import()` pattern used
+ * elsewhere can't share *live state* across extensions. This module is
+ * stateless — every export is a pure function — so each extension
+ * re-evaluating its own copy is harmless.
  */
 import type { Message } from "@earendil-works/pi-ai";
 import { complete } from "@earendil-works/pi-ai/compat";
@@ -24,59 +38,175 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 
 export const SUMMARY_INTERVAL_TURNS = 3; // configurable cadence
 
-const SUMMARY_PROMPT_BASE =
-  "Write a 5 or less word high-level summary describing what you are currently doing. Only state *what* you are doing, not why, how, describing the problem itself.\n\n" +
-  "Output a cold, third-person perspective fragment. High-level only — no low-level details.\n\n" +
-  "No first-person (I, we, my, our). No conversational text — no 'Let me', 'That's odd', 'Success!', 'Let's see', 'I need to'. No greetings.\n\n" +
-  "Bad: 'I found the config file and am checking it'\n" +
-  "Good: 'Config file located, verifying settings'\n" +
-  "Bad: 'Let me look into why the program is segfaulting'\n" +
-  "Good: 'Investigating segfault'\n" +
-  "Bad: 'It looks like bc_rescan_target_files and foo_bar are not exported'\n" +
-  "Good: 'Investigating missing functions'\n" +
-  "Bad: 'Now let me look at the remaining critical areas - how the 'complicated_function' handles some operation.'\n" +
-  "Good: 'Investigating remaining critical areas.'";
+// The dedicated summariser, as registered in pi/agent/models.json. Routed
+// through Bifrost (:11435 -> :11437) rather than straight at the container, so
+// these polls show up in the gateway's log UI alongside every other request —
+// worth one extra hop for the observability.
+//
+// The "write: broken pipe" 500s previously seen on gateway side-channel calls
+// aren't a concern here: those came from a pooled connection being reused
+// while the shared single slot was mid-generation. This model has its own
+// server and two slots, so there's no generation to collide with.
+const SUMMARY_PROVIDER = "summariser";
+const SUMMARY_MODEL_ID = "vllm/qwen3.5-2b-summariser";
 
-// Folds the previous summary in so that repeated polls of the same task
-// converge on identical wording instead of rephrasing it every cadence tick
-// (e.g. "Investigating segfault" vs "Debugging crash" for the same work).
-export function buildSummaryPrompt(lastSummary: string | undefined): string {
-  if (!lastSummary) return SUMMARY_PROMPT_BASE;
-  return (
-    SUMMARY_PROMPT_BASE +
-    `\n\nYour previous summary was: "${lastSummary}". If still working on the same task, repeat it verbatim. Only write a new summary if the task has genuinely changed.`
-  );
+// Prompt shape is tuned for a 2B, which is far more example-suggestible than
+// the 27B was. Two failure modes showed up in testing and both are addressed
+// here deliberately:
+//
+//   1. With the examples last, the model echoed a "Good:" example verbatim
+//      instead of reading the transcript. Fixed by moving all instruction and
+//      examples into the system prompt, leaving the transcript as the last and
+//      most salient thing in the request, and by labelling the examples as
+//      form-only with an explicit "never copy" rule.
+//   2. With the repeat-previous-label rule buried in the user message, the
+//      model reworded the same task every tick — the exact flicker that
+//      folding the previous summary in was meant to stop. Fixed by promoting
+//      it to a top-level rule here.
+//
+// Verified 2026-08-02 against Qwen3.5-2B-Q8_0: repeats verbatim on an
+// unchanged task (including when the transcript drifts to a different file),
+// writes a fresh label on a genuine task switch, works with no previous
+// label, and strips first-person/conversational bait
+// ("Let me see! I need to figure out why my parser is crashing. This is
+// getting complex." -> "Investigating parser crash").
+const SUMMARY_SYSTEM_PROMPT = `You label an agent transcript with a status line.
+
+Rules:
+- 5 words or fewer, describing WHAT is being done.
+- Cold third-person fragment. No first-person (I, we, my, our).
+- No conversational text (Let me, Success!, Now I will). No greetings.
+- Output ONLY the label. Never copy the examples below; they show FORM only.
+- If a PREVIOUS LABEL is given and the transcript is still the same broad task, output that previous label character-for-character. Only write a new label if the task genuinely changed.
+
+Form examples (do not reuse the wording):
+  transcript about a segfault -> Investigating segfault
+  transcript about missing exports -> Investigating missing functions
+  transcript about reading settings -> Config file located, verifying settings`;
+
+// Budget for the rendered transcript. Applied to the rendered text rather than
+// to raw message objects, because that's what actually reaches the model —
+// a 50KB tool result renders to one capped line, so counting the raw message
+// would wildly over-charge it and drop useful earlier context.
+const TRANSCRIPT_MAX_CHARS = 2000;
+const TRANSCRIPT_MAX_LINES = 16;
+const LINE_MAX_CHARS = 200;
+
+function collapse(text: string, limit = LINE_MAX_CHARS): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length > limit ? flat.slice(0, limit) + "…" : flat;
 }
 
-// Fires a standalone, ephemeral complete() call using the messages the model
-// just saw plus one user message asking for the status line. Best-effort:
-// never throws — returns undefined on any failure so callers can no-op.
+// Renders one message to zero or more transcript lines. Thinking blocks are
+// dropped (they're the model's scratch work, not what it's *doing*), images
+// become a placeholder rather than dragging base64 or the vision tower in.
+function renderMessage(message: Message): string[] {
+  const lines: string[] = [];
+  const content = message.content;
+
+  if (typeof content === "string") {
+    const text = collapse(content);
+    if (text) lines.push(`[${message.role}] ${text}`);
+    return lines;
+  }
+
+  for (const block of content) {
+    switch (block.type) {
+      case "text": {
+        const text = collapse(block.text);
+        if (text) lines.push(`[${message.role === "toolResult" ? "result" : message.role}] ${text}`);
+        break;
+      }
+      case "toolCall": {
+        // Argument values, not keys, are what identify the action ("Read
+        // server-context.cpp" beats "Read(file_path)"), so join the values.
+        const args = collapse(Object.values(block.arguments ?? {}).map((v) => String(v)).join(" "), 80);
+        lines.push(`[tool] ${block.name}(${args})`);
+        break;
+      }
+      case "image":
+        lines.push("[image]");
+        break;
+      // thinking: intentionally skipped
+    }
+  }
+  return lines;
+}
+
+// Builds the transcript tail within budget, walking backwards so the most
+// recent activity always wins. Returns oldest-first.
+//
+// Note this replaces the earlier `truncateForSummary` approach of slicing real
+// Message objects and re-sending them. Flattening to text removes a whole
+// class of problem: no orphaned toolResult can be cut loose from its toolCall
+// (providers reject that), no tool schemas are needed, and no thinking blocks
+// or image payloads can leak in.
+export function renderTranscript(messages: Message[]): string {
+  const lines: string[] = [];
+  let chars = 0;
+  outer: for (let i = messages.length - 1; i >= 0; i--) {
+    const rendered = renderMessage(messages[i]);
+    for (let j = rendered.length - 1; j >= 0; j--) {
+      const line = rendered[j];
+      if (lines.length > 0 && (chars + line.length > TRANSCRIPT_MAX_CHARS || lines.length >= TRANSCRIPT_MAX_LINES)) {
+        break outer;
+      }
+      lines.unshift(line);
+      chars += line.length;
+    }
+  }
+  return lines.join("\n");
+}
+
+// Resolves the dedicated summariser. Deliberately does NOT fall back to the
+// agent's own model: that is precisely the behaviour this module exists to
+// avoid, and a silent fallback would quietly reintroduce multi-minute
+// reprefills. If the summariser isn't registered or isn't running, callers
+// get undefined and simply show no summary segment.
+function resolveSummaryModel(ctx: ExtensionContext) {
+  return ctx.modelRegistry.find(SUMMARY_PROVIDER, SUMMARY_MODEL_ID);
+}
+
+// Fires a standalone, ephemeral completion against the dedicated summariser.
+// Best-effort: never throws — returns undefined on any failure (including the
+// summariser being unregistered, down, or the call being aborted) so callers
+// can no-op.
+//
+// `signal` is an explicit parameter rather than `ctx.signal` on purpose.
+// ctx.signal is documented as "the current abort signal, or undefined when the
+// agent is not streaming" — i.e. it belongs to the in-progress generation.
+// That was fine while callers awaited this inside turn_end, but callers now
+// fire it without awaiting, so the request outlives the turn that started it
+// and ctx.signal would be aborted out from under it as soon as streaming
+// stopped. Callers pass a run-scoped signal instead.
 export async function requestSummaryText(
   pi: ExtensionAPI,
   ctx: ExtensionContext,
   priorMessages: Message[],
-  promptText: string,
+  lastSummary: string | undefined,
+  signal?: AbortSignal,
 ): Promise<string | undefined> {
   try {
-    const model = ctx.model;
+    const model = resolveSummaryModel(ctx);
     if (!model) return undefined;
     const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
     if (!auth.ok) return undefined;
 
-    const activeNames = new Set(pi.getActiveTools());
-    const tools = pi.getAllTools()
-      .filter((t) => activeNames.has(t.name))
-      .map((t) => ({ name: t.name, description: t.description, parameters: t.parameters }));
+    const transcript = renderTranscript(priorMessages);
+    if (!transcript) return undefined;
 
-    const messages: Message[] = [
-      ...priorMessages,
-      { role: "user", content: [{ type: "text", text: promptText }], timestamp: Date.now() },
-    ];
+    const previous = lastSummary ? `PREVIOUS LABEL: ${lastSummary}\n\n` : "";
+    const promptText = `${previous}Transcript:\n${transcript}\n\nLabel:`;
 
     const response = await complete(
       model,
-      { systemPrompt: ctx.getSystemPrompt(), messages, tools },
-      { apiKey: auth.apiKey, headers: auth.headers, env: auth.env, reasoning: "off", maxTokens: 32, signal: ctx.signal },
+      {
+        systemPrompt: SUMMARY_SYSTEM_PROMPT,
+        messages: [{ role: "user", content: [{ type: "text", text: promptText }], timestamp: Date.now() }],
+        // No tools, deliberately: the summariser must never call anything, and
+        // the agent's 15 schemas were 13.1K chars of the old request.
+      },
+      { apiKey: auth.apiKey, headers: auth.headers, env: auth.env, reasoning: "off", maxTokens: 32, signal },
     );
 
     return response.content

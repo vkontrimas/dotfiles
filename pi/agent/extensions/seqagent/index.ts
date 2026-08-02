@@ -11,6 +11,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { Message } from "@earendil-works/pi-ai";
 import {
+  convertToLlm,
   type ExtensionAPI,
   type ExtensionContext,
   getMarkdownTheme,
@@ -19,7 +20,7 @@ import {
 import { Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { type AgentConfig, discoverAgents } from "./agents.ts";
-import { buildSummaryPrompt, requestSummaryText, SUMMARY_INTERVAL_TURNS } from "../lib/summary-status.ts";
+import { requestSummaryText, SUMMARY_INTERVAL_TURNS } from "../lib/summary-status.ts";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -597,21 +598,47 @@ export default function (pi: ExtensionAPI) {
   // loaded globally for every `pi` invocation, including seqagent's children.
 
   if (process.env.SEQAGENT_SUBAGENT === "1") {
-    let lastMessages: Message[] = [];
+    // AgentMessage[], not Message[]. The `context` event fires upstream of
+    // convertToLlm, so these still hold pi-internal roles (`custom`,
+    // `bashExecution`, `branchSummary`, `compactionSummary`). This was
+    // previously a bare `as Message[]` cast, which silently dropped every one
+    // of those — costing the whole transcript under `/plan`, where both
+    // messages pi sends are `role: "custom"`. Typed off convertToLlm's own
+    // parameter so the distinction can't drift (same fix as working-status).
+    let lastMessages: Parameters<typeof convertToLlm>[0] = [];
     let turnsSinceSummary = 0;
     let summarizedOnce = false;
     let agentEnded = false;
     let lastSummaryText: string | undefined;
+    // Fire-and-forget bookkeeping — same hazards as working-status/index.ts,
+    // which carries the full rationale. The UI-specific one doesn't apply here
+    // (there's no status line, just a JSON line on stderr that the parent
+    // reads), but a late summary would still mislabel a finished step in the
+    // parent's rendered list, and a reply from a previous run must not leak
+    // into the next.
+    let runController: AbortController | undefined;
+    let runGeneration = 0;
+    let summaryInFlight = false;
 
     pi.on("context", (event) => {
-      lastMessages = event.messages as Message[];
+      lastMessages = event.messages;
     });
 
-    const requestSummary = async (ctx: ExtensionContext, promptText: string) => {
-      const text = await requestSummaryText(pi, ctx, lastMessages, promptText);
-      if (text) {
+    const requestSummary = async (ctx: ExtensionContext) => {
+      if (summaryInFlight) return;
+      summaryInFlight = true;
+      const generation = runGeneration;
+      const signal = runController?.signal;
+      try {
+        const text = await requestSummaryText(pi, ctx, convertToLlm(lastMessages), lastSummaryText, signal);
+        if (!text) return;
+        if (generation !== runGeneration || agentEnded || signal?.aborted) return;
         lastSummaryText = text;
         console.error(JSON.stringify({ type: "seqagent_summary", text }));
+      } catch {
+        // best-effort; the parent just shows the step's task text instead
+      } finally {
+        summaryInFlight = false;
       }
     };
 
@@ -620,27 +647,46 @@ export default function (pi: ExtensionAPI) {
     pi.on("agent_start", () => {
       agentEnded = false;
       lastSummaryText = undefined;
+      // Cadence counters reset here too. They previously didn't, which was
+      // invisible while a child process ran exactly one agent — but it meant a
+      // second run in the same process would inherit the first's counters and
+      // skip its opening summaries (`summarizedOnce` still true, so the
+      // fire-on-first-turn path never re-armed).
+      turnsSinceSummary = 0;
+      summarizedOnce = false;
+      runGeneration++;
+      runController?.abort();
+      runController = new AbortController();
     });
 
-    pi.on("agent_end", () => {
+    // Abort rather than let a request finish into a void: the child process
+    // exits shortly after the run ends, and one still on the wire just delays
+    // that. agent_settled is the backstop for runs that end without agent_end
+    // (an aborted run, say) — without it, a late reply could still print a
+    // seqagent_summary line for a step the parent has already finished
+    // rendering.
+    const stopRunSummaries = () => {
       agentEnded = true;
-    });
+      runController?.abort();
+    };
 
-    pi.on("turn_end", async (_event, ctx) => {
+    pi.on("agent_end", stopRunSummaries);
+    pi.on("agent_settled", stopRunSummaries);
+
+    pi.on("turn_end", (_event, ctx) => {
       if (agentEnded) return;
       turnsSinceSummary++;
       const due = !summarizedOnce || turnsSinceSummary >= SUMMARY_INTERVAL_TURNS;
       if (!due) return;
       turnsSinceSummary = 0;
       summarizedOnce = true;
-      // Awaited (not fire-and-forget): pi awaits turn_end handlers before the
-      // next turn's request goes out, so this guarantees the summary call
-      // never overlaps with a real generation request. The local llama.cpp
-      // backend runs a single inference slot (-np 1) and doesn't tolerate
-      // concurrent connections cleanly — overlapping requests were observed
-      // causing intermittent "write: broken pipe" 500s from bifrost (stale
-      // pooled connection reused while the slot was mid-generation).
-      await requestSummary(ctx, buildSummaryPrompt(lastSummaryText));
+      // Not awaited — the original single-slot reason is gone. This goes to a
+      // separate 2B server (:11437, -np 2), sized with two slots precisely so
+      // a subagent's poll and the parent's can't queue behind each other, so
+      // there's nothing to serialise against and no reason to delay the
+      // subagent's next turn on a status line. requestSummary owns the
+      // late-landing and ordering guards.
+      void requestSummary(ctx);
     });
   }
 }
