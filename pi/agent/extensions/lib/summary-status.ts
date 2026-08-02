@@ -46,7 +46,14 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 // dedicated 2B server and both callers fire it without awaiting, so the only
 // cost of a tighter cadence is 2B tokens. A caller already in flight skips its
 // tick, so this raises how often a poll *starts*, not how many run at once.
-export const SUMMARY_INTERVAL_TURNS = 2;
+// No cadence constant any more. Both callers now fire from the `context`
+// event, which pi emits before every LLM call, so the summary tracks turns
+// one-for-one and also lands a first label off the user's own message before
+// the opening turn runs. The old every-N-turns pacing was a workaround for the
+// poll being awaited against the agent's single-slot server; with a dedicated
+// 2B and an unawaited call there is nothing left to pace, and `summaryInFlight`
+// in each caller provides the only backpressure that's actually needed — if a
+// poll outlives its turn, the next tick is skipped rather than queued.
 
 // The dedicated summariser, as registered in pi/agent/models.json. Routed
 // through Bifrost (:11435 -> :11437) rather than straight at the container, so

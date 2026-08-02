@@ -20,11 +20,10 @@
  *
  * The summary segment reuses the ephemeral side-channel completion pattern
  * from `seqagent/index.ts` — both now share the actual prompt/complete()
- * logic via `../lib/summary-status.ts`. On the first agent turn, and every
- * SUMMARY_INTERVAL_TURNS turns after, it renders a bounded text transcript of
- * recent activity and asks a small dedicated model for a one-line label. The
- * result never touches the real session/context — it only ever reaches the UI
- * via `ctx.ui.setWorkingMessage`.
+ * logic via `../lib/summary-status.ts`. Before every LLM call it renders a
+ * bounded text transcript of recent activity and asks a small dedicated model
+ * for a one-line label. The result never touches the real session/context —
+ * it only ever reaches the UI via `ctx.ui.setWorkingMessage`.
  *
  * That call used to go to the agent's own model, passing the entire message
  * prefix, on the theory that an identical prefix rides the already-warm
@@ -49,7 +48,7 @@
  */
 import { convertToLlm } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { requestSummaryText, SUMMARY_INTERVAL_TURNS } from "../lib/summary-status.ts";
+import { requestSummaryText } from "../lib/summary-status.ts";
 
 const SUMMARY_MAX_CHARS = 80;
 
@@ -63,8 +62,6 @@ export default function (pi: ExtensionAPI) {
   // convertToLlm (see the header comment). Typed off convertToLlm's own
   // parameter so the distinction can't drift.
   let lastMessages: Parameters<typeof convertToLlm>[0] = [];
-  let turnsSinceSummary = 0;
-  let summarizedOnce = false;
   let currentSummary: string | undefined;
   let taskCounts: TaskCounts = { total: 0, remaining: 0 };
   let agentEnded = false;
@@ -98,10 +95,6 @@ export default function (pi: ExtensionAPI) {
     ctx.ui.setStatus("tasks", undefined);
     ctx.ui.setWorkingMessage(buildWorkingMessage());
   };
-
-  pi.on("context", (event) => {
-    lastMessages = event.messages;
-  });
 
   // Fired without awaiting, so it has to defend itself on the way back in.
   // Four hazards, each handled below:
@@ -138,9 +131,34 @@ export default function (pi: ExtensionAPI) {
     }
   };
 
+  // `context` is the trigger as well as the capture point. It's documented as
+  // "fired before each LLM call", which buys two things the old turn_end
+  // cadence couldn't:
+  //
+  //   - Every turn, with no counter. The every-N-turns pacing existed because
+  //     the poll was once awaited against the agent's own single-slot server;
+  //     neither constraint survives (dedicated 2B, fired unawaited), so there
+  //     was nothing left to pace against and the counters were deleted rather
+  //     than set to 1.
+  //   - A label for the user's own message. This fires *before* the first
+  //     assistant turn, with `messages` already holding the new prompt, so the
+  //     line is captioned from the moment the user hits enter instead of
+  //     showing a bare "Working..." until the first turn finished. It also
+  //     means the opening label is drawn from what was actually asked, which
+  //     is usually a better description of the run than its first tool call.
+  //
+  // Registered after requestSummary so it isn't referencing a const declared
+  // below it. Handlers here can rewrite the outgoing message list and are
+  // therefore awaited by the runner, so this one stays synchronous — the
+  // summary is fired unawaited and must remain so, or every LLM call in the
+  // session would block on a status line.
+  pi.on("context", (event, ctx) => {
+    lastMessages = event.messages;
+    if (agentEnded) return;
+    void requestSummary(ctx);
+  });
+
   const resetRun = () => {
-    turnsSinceSummary = 0;
-    summarizedOnce = false;
     currentSummary = undefined;
     agentEnded = false;
     // Bumping the generation invalidates any reply still in flight from the
@@ -160,9 +178,10 @@ export default function (pi: ExtensionAPI) {
     runController?.abort();
   };
 
-  // Reset state at the start of every agent run. The first summary fires on the
-  // first turn_end (`!summarizedOnce` makes it due), so the status line shows
-  // a bare "Working..." for one turn while the first agent turn runs.
+  // Reset state at the start of every agent run. The first summary now fires
+  // from the `context` event immediately after this, before the first turn's
+  // LLM call, so the bare "Working..." is only on screen for as long as the
+  // 2B takes to answer rather than for a whole agent turn.
   pi.on("agent_start", (_event, ctx) => {
     resetRun();
     refreshWorkingMessage(ctx);
@@ -172,28 +191,13 @@ export default function (pi: ExtensionAPI) {
     stopRunSummaries();
   });
 
-  // No longer async: the summary is fired without awaiting, so this handler
-  // does no async work of its own and shouldn't hold up the next turn.
+  // Task counts only. Requesting the summary moved to `context`, which fires
+  // once per LLM call and so covers every turn anyway — keeping a second
+  // trigger here would just double the poll rate for the same information.
+  // pi awaits turn_end handlers before issuing the next turn's request, so
+  // this deliberately stays synchronous and does no network work.
   pi.on("turn_end", (_event, ctx) => {
-    refreshWorkingMessage(ctx); // picks up latest task counts every turn regardless of summary cadence
-    if (agentEnded) return;
-
-    turnsSinceSummary++;
-    const due = !summarizedOnce || turnsSinceSummary >= SUMMARY_INTERVAL_TURNS;
-    if (!due) return;
-    turnsSinceSummary = 0;
-    summarizedOnce = true;
-    // Deliberately NOT awaited. pi awaits turn_end handlers before issuing the
-    // next turn's request, so awaiting this put the summariser's round-trip
-    // directly on the critical path of every summary turn. That was unavoidable
-    // when it shared the agent's single-slot (-np 1) server — an overlapping
-    // request would have fought the live generation for the slot — but it now
-    // has its own 2B server with two slots, so there is nothing to collide
-    // with and no reason to make the user wait for it.
-    //
-    // `void` marks the floating promise as intentional; requestSummary owns
-    // all the late-landing and ordering guards.
-    void requestSummary(ctx);
+    refreshWorkingMessage(ctx);
   });
 
   pi.on("agent_settled", (_event, ctx) => {

@@ -20,7 +20,7 @@ import {
 import { Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { type AgentConfig, discoverAgents } from "./agents.ts";
-import { requestSummaryText, SUMMARY_INTERVAL_TURNS } from "../lib/summary-status.ts";
+import { requestSummaryText } from "../lib/summary-status.ts";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -606,8 +606,6 @@ export default function (pi: ExtensionAPI) {
     // messages pi sends are `role: "custom"`. Typed off convertToLlm's own
     // parameter so the distinction can't drift (same fix as working-status).
     let lastMessages: Parameters<typeof convertToLlm>[0] = [];
-    let turnsSinceSummary = 0;
-    let summarizedOnce = false;
     let agentEnded = false;
     let lastSummaryText: string | undefined;
     // Fire-and-forget bookkeeping — same hazards as working-status/index.ts,
@@ -619,10 +617,6 @@ export default function (pi: ExtensionAPI) {
     let runController: AbortController | undefined;
     let runGeneration = 0;
     let summaryInFlight = false;
-
-    pi.on("context", (event) => {
-      lastMessages = event.messages;
-    });
 
     const requestSummary = async (ctx: ExtensionContext) => {
       if (summaryInFlight) return;
@@ -642,18 +636,37 @@ export default function (pi: ExtensionAPI) {
       }
     };
 
-    // Reset state when the agent starts. The first summary fires on the first
-    // turn_end (via `!summarizedOnce` in the turn_end handler below).
+    // `context` both captures the messages and triggers the summary; it fires
+    // before every LLM call, so this reports once per turn and reports the
+    // opening step from the task text itself rather than after the subagent's
+    // first turn has already run. See working-status/index.ts for the full
+    // rationale — same change, same reasons. Registered after requestSummary
+    // so it isn't referencing a const declared below it, and kept synchronous
+    // because handlers here can rewrite the outgoing message list and are
+    // awaited by the runner.
+    //
+    // The cadence counters this used to keep are gone rather than set to 1.
+    // Note they also used to survive across runs in a reused child process,
+    // which silently suppressed a second run's opening summary; with no
+    // counters left there is nothing to reset and that whole class of bug
+    // goes with them.
+    pi.on("context", (event, ctx) => {
+      lastMessages = event.messages;
+      if (agentEnded) return;
+      // Not awaited — the original single-slot reason is gone. This goes to a
+      // separate 2B server (:11437, -np 2), sized with two slots precisely so
+      // a subagent's poll and the parent's can't queue behind each other, so
+      // there's nothing to serialise against and no reason to delay the
+      // subagent's next turn on a status line. requestSummary owns the
+      // late-landing and ordering guards.
+      void requestSummary(ctx);
+    });
+
+    // Reset state when the agent starts. The first summary now fires from the
+    // `context` event immediately after this, ahead of the first turn's call.
     pi.on("agent_start", () => {
       agentEnded = false;
       lastSummaryText = undefined;
-      // Cadence counters reset here too. They previously didn't, which was
-      // invisible while a child process ran exactly one agent — but it meant a
-      // second run in the same process would inherit the first's counters and
-      // skip its opening summaries (`summarizedOnce` still true, so the
-      // fire-on-first-turn path never re-armed).
-      turnsSinceSummary = 0;
-      summarizedOnce = false;
       runGeneration++;
       runController?.abort();
       runController = new AbortController();
@@ -672,21 +685,5 @@ export default function (pi: ExtensionAPI) {
 
     pi.on("agent_end", stopRunSummaries);
     pi.on("agent_settled", stopRunSummaries);
-
-    pi.on("turn_end", (_event, ctx) => {
-      if (agentEnded) return;
-      turnsSinceSummary++;
-      const due = !summarizedOnce || turnsSinceSummary >= SUMMARY_INTERVAL_TURNS;
-      if (!due) return;
-      turnsSinceSummary = 0;
-      summarizedOnce = true;
-      // Not awaited — the original single-slot reason is gone. This goes to a
-      // separate 2B server (:11437, -np 2), sized with two slots precisely so
-      // a subagent's poll and the parent's can't queue behind each other, so
-      // there's nothing to serialise against and no reason to delay the
-      // subagent's next turn on a status line. requestSummary owns the
-      // late-landing and ordering guards.
-      void requestSummary(ctx);
-    });
   }
 }
