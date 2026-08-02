@@ -12,7 +12,9 @@
  *      no need to round-trip the whole plan content through a tool call each time
  *   6. present_plan tracks the content it last showed (per file, in-memory for the
  *      session) and, on every call, diffs the on-disk content against that baseline
- *      before doing anything else. If it differs — because the user edited it in the
+ *      before doing anything else (ignoring line-ending and trailing-newline
+ *      differences, which editors introduce on write without the user touching
+ *      anything). If it differs — because the user edited it in the
  *      inline editor during a prior call, or touched the file some other way between
  *      calls — the tool result says so and includes a short summary, so the agent
  *      doesn't blindly assume the file still matches what it last wrote or read.
@@ -140,6 +142,16 @@ function spawnEditor(filePath: string, cwd: string): boolean {
 // enough since a fresh process has no prior presentation to compare against.
 const presentedContent = new Map<string, string>();
 
+// Editors normalize on write, and that normalization is not a user edit.
+// Neovim's 'fixendofline' (default on) appends a final newline to a file that
+// lacks one, so a bare `:wq` over an agent-written plan that ended without a
+// trailing newline changes a byte and would otherwise be reported as feedback
+// — once per plan, the first time it's opened. Comparisons run on this form;
+// the baseline and everything shown to the agent stay as the raw file content.
+function normalizeForCompare(content: string): string {
+	return content.replace(/\r\n/g, "\n").replace(/\s+$/, "");
+}
+
 // Short, human-readable description of where two versions of a file first
 // diverge. Not a real diff — just enough for the agent to know something
 // changed and roughly where, without spending tokens on a full unified diff.
@@ -245,7 +257,8 @@ export default function (pi: ExtensionAPI): void {
 			// file since then. Note it now; the editor session below can still change
 			// things further, so the final comparison happens after that.
 			const previouslyPresented = presentedContent.get(filePath);
-			const editedBeforeThisCall = previouslyPresented !== undefined && previouslyPresented !== content;
+			const editedBeforeThisCall =
+				previouslyPresented !== undefined && normalizeForCompare(previouslyPresented) !== normalizeForCompare(content);
 			const editedBeforeThisCallSummary = editedBeforeThisCall ? summarizeChange(previouslyPresented!, content) : null;
 
 			// Open editor inline (same window as Pi) — TUI stop/spawn/start
@@ -305,7 +318,7 @@ export default function (pi: ExtensionAPI): void {
 					finalContent = content;
 				}
 			}
-			const editedDuringThisCall = finalContent !== content;
+			const editedDuringThisCall = normalizeForCompare(finalContent) !== normalizeForCompare(content);
 
 			presentedContent.set(filePath, finalContent);
 
