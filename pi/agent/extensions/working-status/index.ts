@@ -20,10 +20,11 @@
  *
  * The summary segment reuses the ephemeral side-channel completion pattern
  * from `seqagent/index.ts` — both now share the actual prompt/complete()
- * logic via `../lib/summary-status.ts`. Before every LLM call it renders a
- * bounded text transcript of recent activity and asks a small dedicated model
- * for a one-line label. The result never touches the real session/context —
- * it only ever reaches the UI via `ctx.ui.setWorkingMessage`.
+ * logic via `../lib/summary-status.ts`. Before an LLM call — on the ticks the
+ * shared gate picks out, not all of them — it renders a bounded text
+ * transcript of recent activity and asks a small dedicated model for a
+ * one-line label. The result never touches the real session/context — it only
+ * ever reaches the UI via `ctx.ui.setWorkingMessage`.
  *
  * That call used to go to the agent's own model, passing the entire message
  * prefix, on the theory that an identical prefix rides the already-warm
@@ -48,7 +49,7 @@
  */
 import { convertToLlm } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { requestSummaryText } from "../lib/summary-status.ts";
+import { createSummaryGate, requestSummaryText } from "../lib/summary-status.ts";
 
 const SUMMARY_MAX_CHARS = 80;
 
@@ -69,6 +70,10 @@ export default function (pi: ExtensionAPI) {
   let runController: AbortController | undefined;
   let runGeneration = 0;
   let summaryInFlight = false;
+  // Decides which `context` ticks are worth a poll — every authored message,
+  // otherwise every Nth turn. Lives in the shared module so this and seqagent
+  // pace identically; see summary-status.ts for the rules.
+  const summaryGate = createSummaryGate();
 
   pi.events.on("tasks:updated", (data) => {
     taskCounts = data as TaskCounts;
@@ -152,11 +157,14 @@ export default function (pi: ExtensionAPI) {
   // "fired before each LLM call", which buys two things the old turn_end
   // cadence couldn't:
   //
-  //   - Every turn, with no counter. The every-N-turns pacing existed because
-  //     the poll was once awaited against the agent's own single-slot server;
-  //     neither constraint survives (dedicated 2B, fired unawaited), so there
-  //     was nothing left to pace against and the counters were deleted rather
-  //     than set to 1.
+  //   - A tick on every turn for the gate to judge, rather than only after one
+  //     completes. Which of those ticks becomes a poll is `summaryGate`'s call
+  //     (see summary-status.ts): every authored message, otherwise every fifth
+  //     turn. Note this is not the old every-N-turns pacing brought back —
+  //     that one was a workaround for the poll being awaited against the
+  //     agent's single-slot server, and it stayed silent through a stretch of
+  //     conversation as readily as through a stretch of tool calls. This
+  //     paces only the latter.
   //   - A label for the user's own message. This fires *before* the first
   //     assistant turn, with `messages` already holding the new prompt, so the
   //     line is captioned from the moment the user hits enter instead of
@@ -181,12 +189,17 @@ export default function (pi: ExtensionAPI) {
   pi.on("context", (event, ctx) => {
     lastMessages = event.messages;
     if (agentEnded) return;
+    // Capture unconditionally above, gate only the poll: the transcript the
+    // next poll renders should be the newest one, whether or not this tick
+    // asked for a label.
+    if (!summaryGate.shouldRequest(event.messages)) return;
     void requestSummary(ctx);
   });
 
   const resetRun = () => {
     currentSummary = undefined;
     agentEnded = false;
+    summaryGate.reset();
     // Bumping the generation invalidates any reply still in flight from the
     // previous run, and aborting its controller stops that request rather
     // than leaving it to finish into a void.

@@ -20,7 +20,7 @@ import {
 import { Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { type AgentConfig, discoverAgents } from "./agents.ts";
-import { requestSummaryText } from "../lib/summary-status.ts";
+import { createSummaryGate, requestSummaryText } from "../lib/summary-status.ts";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -617,6 +617,10 @@ export default function (pi: ExtensionAPI) {
     let runController: AbortController | undefined;
     let runGeneration = 0;
     let summaryInFlight = false;
+    // Same gate as working-status, from the shared module — a subagent's steps
+    // are reported to the parent on the same cadence the parent labels its own
+    // work with, rather than each side inventing pacing.
+    const summaryGate = createSummaryGate();
 
     const requestSummary = async (ctx: ExtensionContext) => {
       if (summaryInFlight) return;
@@ -636,23 +640,24 @@ export default function (pi: ExtensionAPI) {
       }
     };
 
-    // `context` both captures the messages and triggers the summary; it fires
-    // before every LLM call, so this reports once per turn and reports the
-    // opening step from the task text itself rather than after the subagent's
-    // first turn has already run. See working-status/index.ts for the full
-    // rationale — same change, same reasons. Registered after requestSummary
-    // so it isn't referencing a const declared below it, and kept synchronous
-    // because handlers here can rewrite the outgoing message list and are
-    // awaited by the runner.
+    // `context` both captures the messages and offers the summary a tick; it
+    // fires before every LLM call, so the opening step gets reported from the
+    // task text itself rather than after the subagent's first turn has already
+    // run. See working-status/index.ts for the full rationale — same change,
+    // same reasons. Registered after requestSummary so it isn't referencing a
+    // const declared below it, and kept synchronous because handlers here can
+    // rewrite the outgoing message list and are awaited by the runner.
     //
-    // The cadence counters this used to keep are gone rather than set to 1.
-    // Note they also used to survive across runs in a reused child process,
-    // which silently suppressed a second run's opening summary; with no
-    // counters left there is nothing to reset and that whole class of bug
-    // goes with them.
+    // This once kept its own cadence counter, which survived across runs in a
+    // reused child process and so silently suppressed a second run's opening
+    // summary. The pacing is back but the bug isn't: the counter now lives in
+    // `summaryGate` and agent_start resets it, on both sides, from one
+    // implementation.
     pi.on("context", (event, ctx) => {
       lastMessages = event.messages;
       if (agentEnded) return;
+      // Capture above regardless, poll only on the ticks the gate picks.
+      if (!summaryGate.shouldRequest(event.messages)) return;
       // Not awaited — the original single-slot reason is gone. This goes to a
       // separate 2B server (:11437, -np 2), sized with two slots precisely so
       // a subagent's poll and the parent's can't queue behind each other, so
@@ -667,6 +672,7 @@ export default function (pi: ExtensionAPI) {
     pi.on("agent_start", () => {
       agentEnded = false;
       lastSummaryText = undefined;
+      summaryGate.reset();
       runGeneration++;
       runController?.abort();
       runController = new AbortController();

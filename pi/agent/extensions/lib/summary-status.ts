@@ -32,28 +32,114 @@
  * Plain relative import rather than a declared package dependency: pi's
  * extension loader gives each extension its own jiti instance with
  * `moduleCache: false`, so the `file:../tasks` + `await import()` pattern used
- * elsewhere can't share *live state* across extensions. This module is
- * stateless — every export is a pure function — so each extension
- * re-evaluating its own copy is harmless.
+ * elsewhere can't share *live state* across extensions. Nothing here holds
+ * module-level state: the functions are pure and `createSummaryGate` hands its
+ * state back to the caller, which owns one gate per session anyway. So each
+ * extension re-evaluating its own copy is harmless.
  */
 import type { Message } from "@earendil-works/pi-ai";
 import { complete } from "@earendil-works/pi-ai/compat";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { convertToLlm, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-// Every other turn. This was 3 while the poll shared the agent's single-slot
-// server and callers awaited it — each tick was latency on the critical path,
-// so it was worth spacing out. Neither is true now: the poll goes to the
-// dedicated 2B server and both callers fire it without awaiting, so the only
-// cost of a tighter cadence is 2B tokens. A caller already in flight skips its
-// tick, so this raises how often a poll *starts*, not how many run at once.
-// No cadence constant any more. Both callers now fire from the `context`
-// event, which pi emits before every LLM call, so the summary tracks turns
-// one-for-one and also lands a first label off the user's own message before
-// the opening turn runs. The old every-N-turns pacing was a workaround for the
-// poll being awaited against the agent's single-slot server; with a dedicated
-// 2B and an unawaited call there is nothing left to pace, and `summaryInFlight`
-// in each caller provides the only backpressure that's actually needed — if a
-// poll outlives its turn, the next tick is skipped rather than queued.
+// --- When to poll ---
+//
+// Both callers fire from the `context` event, which pi emits before every LLM
+// call — i.e. once per turn, including every tool-call continuation. Polling
+// on all of them was the cadence for a while, and it is more often than the
+// status line has anything new to say: a run of ten tool calls with no
+// narration is one activity, and re-labelling it ten times is 2B tokens spent
+// to redraw the same words (the prompt's repeat-the-previous-label rule exists
+// precisely because that churn looked like flicker when it didn't).
+//
+// So the gate below fires on the turns that carry new information and paces the
+// rest:
+//
+//   - Any newly appended message with text the user or the agent wrote. That's
+//     the signal that the *subject* may have changed, and it also keeps the
+//     property that made `context` worth moving to: the first tick of a run
+//     lands off the user's own message, before the opening turn runs, so the
+//     line is captioned from the moment they hit enter.
+//   - Otherwise every SUMMARY_TURN_INTERVAL turns, so a long silent stretch of
+//     tool calls still gets re-labelled as it drifts, just not per call.
+//
+// "Text the user or the agent wrote" deliberately includes an assistant message
+// that carries text *and* tool calls — narration alongside a call is still the
+// agent saying what it's doing, and often the best label material in the whole
+// transcript. Models that narrate every turn therefore poll every turn, which
+// is the intended reading of "fires when a message is sent" and not a bug; if
+// that turns out to be too hot, the narrow fix is to require the assistant
+// message to have no toolCall blocks, not to raise the interval.
+//
+// Excluded, by role or block type:
+//   - toolResult messages. Tool output is not somebody sending a message, and
+//     it's the one role that arrives on *every* silent turn — counting it would
+//     make the gate a no-op.
+//   - thinking blocks, matching renderMessage below: scratch work, not a
+//     statement of what's being done.
+//
+// The interval counts turns, not polls, and resets on every fire — so it's "at
+// most 5 silent turns since the last label", not "every 5th turn regardless".
+export const SUMMARY_TURN_INTERVAL = 5;
+
+// The `context` event's messages are AgentMessage[], upstream of convertToLlm,
+// so they still carry pi-internal roles (`custom`, `bashExecution`,
+// `branchSummary`, `compactionSummary`). Typed off convertToLlm's own parameter
+// so this can't drift from what the callers actually hand over — and typed as
+// the pre-conversion form on purpose, since a `custom` message is exactly what
+// `/plan` sends and exactly the kind of "user said something" this gate wants
+// to catch.
+type AgentMessages = Parameters<typeof convertToLlm>[0];
+type AgentMessage = AgentMessages[number];
+
+function hasAuthoredText(message: AgentMessage): boolean {
+  if (message.role === "toolResult") return false;
+  const content = (message as { content?: unknown }).content;
+  if (typeof content === "string") return content.trim().length > 0;
+  if (!Array.isArray(content)) return false;
+  return content.some((block) => block?.type === "text" && typeof block.text === "string" && block.text.trim().length > 0);
+}
+
+export interface SummaryGate {
+  /** Call once per `context` event. True means poll now. */
+  shouldRequest(messages: AgentMessages): boolean;
+  /** Call on agent_start, so a new run isn't paced by the previous one's counter. */
+  reset(): void;
+}
+
+export function createSummaryGate(interval: number = SUMMARY_TURN_INTERVAL): SummaryGate {
+  // How many messages had already been inspected at the last tick — everything
+  // past this index is what arrived during the turn just finished.
+  let seen = 0;
+  let turnsSinceRequest = 0;
+
+  return {
+    shouldRequest(messages: AgentMessages): boolean {
+      // The list got shorter: compaction replaced a span with a summary, or the
+      // user rewound the tree. Either way the old index points into a list that
+      // no longer exists, so rescan from the start — which will normally fire,
+      // correctly, because the context genuinely changed out from under us.
+      if (messages.length < seen) seen = 0;
+
+      let authored = false;
+      for (let i = seen; i < messages.length; i++) {
+        if (hasAuthoredText(messages[i])) {
+          authored = true;
+          break;
+        }
+      }
+      seen = messages.length;
+
+      turnsSinceRequest++;
+      if (!authored && turnsSinceRequest < interval) return false;
+      turnsSinceRequest = 0;
+      return true;
+    },
+    reset() {
+      seen = 0;
+      turnsSinceRequest = 0;
+    },
+  };
+}
 
 // The dedicated summariser, as registered in pi/agent/models.json. Routed
 // through Bifrost (:11435 -> :11437) rather than straight at the container, so
