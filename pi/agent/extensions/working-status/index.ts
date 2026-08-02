@@ -114,6 +114,23 @@ export default function (pi: ExtensionAPI) {
   //      refreshWorkingMessage could throw, and nothing awaits this promise —
   //      so the whole body is wrapped.
   const requestSummary = async (ctx: ExtensionContext) => {
+    // No TUI, no reason to ask. This extension's only output is
+    // ctx.ui.setWorkingMessage, and refreshWorkingMessage already no-ops off
+    // this same check — so outside a TUI the poll was computed and thrown away.
+    //
+    // That was not merely wasteful. This module loads in *every* pi process,
+    // including the children seqagent spawns (ExtensionMode is
+    // "tui" | "rpc" | "json" | "print"; a spawned child is never "tui"), and
+    // seqagent's own summary block runs there too. Both registered a `context`
+    // handler, so a child fired two byte-identical polls at the same instant —
+    // visible in the server log as pairs launched <1ms apart with matching
+    // n_tokens, interleaved with the parent's singles. `summaryInFlight` can't
+    // catch that: it's a per-closure guard and these are two closures.
+    //
+    // The pair also defeated the point of sizing the server with -np 2, which
+    // was to stop a subagent's poll queueing behind the parent's; instead a
+    // single child took both slots and the parent queued behind it.
+    if (ctx.mode !== "tui") return;
     if (summaryInFlight) return;
     summaryInFlight = true;
     const generation = runGeneration;
