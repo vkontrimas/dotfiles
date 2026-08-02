@@ -122,12 +122,11 @@ Form examples (do not reuse the wording):
 // transcript would exceed the slot, at which point the poll fails and the
 // status line is simply not updated — requestSummaryText swallows it.
 //
-// The same 9000 is now spent on FEWER, RICHER lines rather than many thin
-// ones: 72x200 became 30x500. The earlier note here argued the opposite — that
-// the budget should buy more *events* — which is a real trade, but a 200-char
-// slice turned out to truncate exactly the part that identifies the work (the
-// tail of a path, the flag that says what a command was for) while a 30-event
-// window still comfortably spans a stretch of one task.
+// The same 9000 is spent on fewer, richer lines than it once was: 72x200
+// became 50x500. An earlier note here argued the opposite — that the budget
+// should buy more *events* — which is a real trade, but a 200-char slice
+// truncated exactly the part that identifies the work (the tail of a path, the
+// flag that says what a command was for).
 //
 // TOOL_ARG_MAX_CHARS matters more than LINE_MAX_CHARS for this. Tool calls are
 // most of a transcript and render from their argument values, which were
@@ -135,15 +134,17 @@ Form examples (do not reuse the wording):
 // LINE_MAX_CHARS said, and raising only the line cap would have changed
 // nothing for them. It moves to 300 alongside.
 //
-// Note the two caps interact through the char budget. Lines are gathered
-// backwards until either runs out, so raising the per-line caps means the char
-// budget is reached in fewer lines — the line count falls out of that rather
-// than being imposed. TRANSCRIPT_MAX_LINES is now a ceiling on reach (how far
-// back a summary can see), not the thing that usually binds. The residual risk
-// is under-fill: a stretch of genuinely short lines can no longer reach 9000
-// in 30 of them, so those polls run smaller. That's accepted deliberately —
-// short lines mean there was little to say, and padding the window with more
-// of them is not what makes the label better.
+// The line count went 30 -> 50 once toolResults stopped rendering. At 30 the
+// line ceiling bound in every case measured and polls ran at ~55-60% of the
+// char budget, but before results were dropped that headroom would only have
+// bought more log spew, so leaving it unused was right. With results gone the
+// marginal line is another real action instead, which is worth paying for.
+//
+// The two caps interact through the char budget: lines are gathered backwards
+// until either runs out, so the per-line caps decide how many lines the 9000
+// covers, and TRANSCRIPT_MAX_LINES is a ceiling on *reach* — how far back a
+// summary can see — rather than a target. Whichever binds first is a property
+// of the traffic, not something to tune toward.
 //
 // WORTH RE-EXAMINING IF LABELS DEGRADE: this is now a transcript ~10x the
 // original, fed to a 2B. Memory is not the risk — attention is. The prompt is
@@ -152,7 +153,7 @@ Form examples (do not reuse the wording):
 // a confident label for the older one. If that shows up, cut this budget; do
 // not reach for the context size, which is not what's binding.
 const TRANSCRIPT_MAX_CHARS = 9000;
-const TRANSCRIPT_MAX_LINES = 30;
+const TRANSCRIPT_MAX_LINES = 50;
 const LINE_MAX_CHARS = 500;
 const TOOL_ARG_MAX_CHARS = 300;
 
