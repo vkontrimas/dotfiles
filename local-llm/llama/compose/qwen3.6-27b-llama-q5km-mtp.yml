@@ -155,18 +155,59 @@ services:
       # KV state to host RAM when a new task takes the slot, then restores it
       # instead of reprefilling — exactly the main-agent/subagent swap case.
       #
-      # SIZING (measured, not guessed): KV is 34 KiB/token here — 16 full-
-      # attention layers x (4 kv-heads x 256 key_length + same for value) x
-      # 1.0625 B/elem for q8_0. So a 200K-token conversation snapshots to
-      # ~6.6GB, and observed evicted entries were 1.1-7.4GB, matching. The
-      # 8192 MiB default therefore holds exactly ONE conversation: the
+      # SIZING: KV proper is 34 KiB/token here — 16 full-attention layers x
+      # (4 kv-heads x 256 key_length + same for value) x 1.0625 B/elem for
+      # q8_0. The 8192 MiB default held exactly ONE conversation: the
       # subagent's entry evicted the main agent's every single time, costing
       # a full reprefill (measured: 201,506 tokens / 341s at ~590 tok/s).
-      # 16384 fits two full-size entries with headroom; 12288 would fit one
-      # full + one partial and still thrash when both agents run long.
-      # Box has 46GB RAM (~38GB available), so 16GB is comfortable.
+      #
+      # CORRECTION (2026-08-02): the "16384 fits two full-size entries with
+      # headroom" note this replaces was wrong, because 34 KiB/token only
+      # counts the KV. Cache entries also carry the slot's CONTEXT
+      # CHECKPOINTS, and those dominate: measured entries at ~100K tokens ran
+      # 8.7-9.4GB (~95 KiB/token, 2.8x the KV-only figure) against the ~3.3GB
+      # the old math predicted. So 16384 still held only one entry, and the
+      # working-status summary side-channel — which back then ran against this
+      # server carrying the whole conversation, making its entry a full-size
+      # twin of the main one — evicted it on every cadence tick. Result: a
+      # 116-126s full reprefill every other turn.
+      #
+      # That side-channel no longer touches this server at all: status
+      # summaries moved to a dedicated 2B on :11437
+      # (qwen3.5-2b-summariser.yml). Shrinking its request was tried first and
+      # was NOT enough — with -np 1 the swap-out cost is paid whatever the
+      # request size, because a hybrid recurrent slot can't be rolled back
+      # cheaply. Only moving it off this server actually fixed it.
+      #
+      # Left at 16384: with the checkpoint cap below an entry is ~3.4GB, and
+      # this server now serves one conversation at a time, so it holds several
+      # comfortably. Box has 46GB RAM but only ~24GB available with 5GB of swap
+      # already in use, so there's no headroom to solve anything by raising it.
       - --cache-ram
       - "16384"
+      # Context checkpoints are how a slot rolls back to an earlier position.
+      # For pure attention that's just dropping KV cells; for this model's 48
+      # linear-attention (DeltaNet) layers the recurrent state is a running
+      # fold that can't be reversed, so a checkpoint at/before the branch
+      # point is the ONLY way back — hence they're kept, not disabled.
+      #
+      # But the default 32 is sized for cheap SWA-window checkpoints
+      # (ggml-org/llama.cpp#15293, where this was --swa-checkpoints); on a
+      # hybrid model each one is a full recurrent-state snapshot at ~480 MiB.
+      # At the default --checkpoint-min-step 8192 a 100K conversation
+      # accumulates ~12 of them, ~5.6GB — the bulk of every cache entry, and
+      # the reason entries grew ~740MB while the conversation grew only 4K
+      # tokens (98,645 -> 102,522: a checkpoint boundary, not per-token
+      # growth). 4 keeps enough rollback granularity for the branch depths
+      # actually seen here while cutting the tail ~3x.
+      #
+      # NOT related to the upstream hybrid checkpoint bugs (#24055, #20225,
+      # #19794) where checkpoints are always invalidated — this server logs
+      # zero "erased invalidated context checkpoint" / "forcing full prompt
+      # re-processing due to lack of cache data" lines. Worth re-grepping for
+      # those before blaming this flag if reprefills reappear.
+      - -ctxcp
+      - "4"
       # Unlocks POST /slots/{id}?action=erase (confirmed: without this flag
       # the endpoint 501s). Used by seqagent's erase-on-subagent-exit fix
       # (pi/agent/extensions/seqagent/index.ts, toggle via
@@ -195,8 +236,31 @@ services:
       - "on"
       - --reasoning-format
       - deepseek
-      - --chat-template-kwargs
-      - '{"enable_thinking":true,"preserve_thinking":true}'
+      # Was --chat-template-kwargs '{"enable_thinking":true,"preserve_thinking":true}'.
+      # Both halves are now first-class flags, and the server warned about both
+      # on boot:
+      #   W Setting 'enable_thinking' via --chat-template-kwargs is deprecated.
+      #     Use --reasoning on / --reasoning off instead.
+      #   I srv init: chat template supports preserving reasoning, consider
+      #     enabling it via --reasoning-preserve
+      # enable_thinking was already redundant (--reasoning on is set above), and
+      # --reasoning-preserve (ggml-org/llama.cpp#25105) applies through the
+      # template's advertised `supports_preserve_reasoning` capability — which
+      # /props confirms this template has — rather than by setting a raw Jinja
+      # variable by name, so it won't silently stop working if the template
+      # renames it. Behaviourally identical to what the kwargs were doing.
+      #
+      # Kept ON for reasoning quality, NOT as a cache fix: ggml-org/llama.cpp#22615
+      # tested preserve_thinking on Qwen3.5-arch specifically and found it does
+      # not unlock the prompt cache (identical-request speedup stayed 0.67x —
+      # the hybrid-recurrent pos_min > pos_min_thold skip is independent of it).
+      # What it does buy there is multi-turn reasoning recall, ~16.7% -> 58.3%,
+      # for 43-193 extra prompt tokens per turn.
+      #
+      # It does also keep history append-only: without it the template falls
+      # back to `loop.index0 > ns.last_query_index`, retaining thinking only
+      # after the last user query, so every turn rewrites the history behind it.
+      - --reasoning-preserve
       - --temp
       - "0.6"
       - --top-p
