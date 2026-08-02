@@ -147,6 +147,15 @@ export default function (pi: ExtensionAPI) {
   //     means the opening label is drawn from what was actually asked, which
   //     is usually a better description of the run than its first tool call.
   //
+  // To be clear about what "before each LLM call" means: this is per *turn*,
+  // not per user message. pi-agent-core calls transformContext at the top of
+  // streamAssistantResponse, which the inner `while (hasMoreToolCalls || ...)`
+  // loop re-enters for every tool-call continuation. Confirmed on a 3-turn
+  // run — context fired at messages=1/lastRole=user, then twice more at
+  // lastRole=toolResult, one per turn_start/turn_end pair. So the cadence
+  // matches the old turn_end trigger exactly; it's just moved to the front of
+  // each turn, which is what buys the extra label off the user's message.
+  //
   // Registered after requestSummary so it isn't referencing a const declared
   // below it. Handlers here can rewrite the outgoing message list and are
   // therefore awaited by the runner, so this one stays synchronous — the
