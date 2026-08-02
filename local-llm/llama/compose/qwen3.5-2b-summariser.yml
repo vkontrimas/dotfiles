@@ -67,12 +67,31 @@ services:
       - -ngl
       - "99"
       # Total budget shared across slots, NOT per-slot — same semantics as the
-      # 27B config. 16384/2 = 8192 per slot, which is far more than a summary
-      # request needs (a truncated snippet plus the prompt runs a few hundred
-      # tokens); the slack is there so an oversized tool result in the snippet
-      # can't overflow.
+      # 27B config. 8192/2 = 4096 per slot.
+      #
+      # Was 16384. That was sized as pure slack, back when a poll ran a few
+      # hundred tokens and the window was ~9x larger than anything that could
+      # reach it. The transcript budget in lib/summary-status.ts is now sized
+      # deliberately against this number rather than hiding under it: ~3020
+      # tokens of transcript plus a 167-token system prompt, wrapper and the
+      # 32-token reply lands a full poll near 3250, about 80% of a slot.
+      #
+      # Halving this is close to free. qwen35 is hybrid — full_attention_interval
+      # is 4, so only 6 of 24 blocks keep a per-token KV (the other 18 are SSM
+      # with a fixed-size state that doesn't scale with n_ctx). At
+      # head_count_kv=2, key/value_length=256 and q8_0 KV that's 6.375 KiB per
+      # token total, so 16384 -> 8192 returns only ~51 MiB of GPU0. It is done
+      # for the honest sizing, not the memory.
+      #
+      # OVERFLOW NOTE: the transcript is capped in *chars*, and the 9000-char
+      # cap was converted to tokens at a measured 3.00 chars/token (via this
+      # server's own /tokenize, on representative rendered-transcript lines —
+      # paths and flags tokenize far denser than prose). Content that tokenizes
+      # denser still eats into the remaining 20%; below ~2.4 chars/token a
+      # maximal transcript would exceed the slot. That degrades to a dropped
+      # status line (requestSummaryText swallows the error), never to a stall.
       - --ctx-size
-      - "16384"
+      - "8192"
       # Two slots so a seqagent subagent's summary can't queue behind the main
       # agent's. This is why the plain GGUF is used rather than the -MTP-
       # variant: MTP speculative decoding requires -np 1, and for a 32-token

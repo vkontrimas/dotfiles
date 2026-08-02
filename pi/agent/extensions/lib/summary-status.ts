@@ -25,9 +25,9 @@
  * Measured effect: a poll went from ~65,000 prompt tokens (full system prompt
  * 18.3K chars + 15 tool schemas 13.1K chars + entire history) to ~220 tokens
  * at the original 2000-char transcript budget. The budget has since been
- * widened (see TRANSCRIPT_MAX_CHARS), so a full poll now runs closer to ~900 —
- * still three orders of magnitude off the original, and on a server whose slot
- * nothing else contends for.
+ * widened twice (see TRANSCRIPT_MAX_CHARS), so a full poll now runs closer to
+ * ~3250 — still a 20x reduction, and on a server whose slot nothing else
+ * contends for, which is the property that actually mattered.
  *
  * Plain relative import rather than a declared package dependency: pi's
  * extension loader gives each extension its own jiti instance with
@@ -98,20 +98,40 @@ Form examples (do not reuse the wording):
 // to raw message objects, because that's what actually reaches the model —
 // a 50KB tool result renders to one capped line, so counting the raw message
 // would wildly over-charge it and drop useful earlier context.
-// Widened from 2000/16. Not a server-side constraint either way: the
-// summariser gives 8192 tokens per slot (--ctx-size 16384, -np 2) and even the
-// wider budget renders to roughly 900, so there is a lot of slack. The real
-// limit is the 2B's attention — the prompt is built so the transcript is the
-// last and most salient thing in the request, and a transcript long enough to
-// span two unrelated tasks invites a label for the older one. These values
-// cover more of a single stretch of work without reaching back that far.
+// Sized to fill ~80% of a slot, rather than to sit safely under it as before
+// (2000/16, then 3500/28). The summariser now runs --ctx-size 8192 with -np 2,
+// so a slot is 4096 tokens and the 80% target is ~3277 for the whole request.
+// Against that: 167 tokens of system prompt, ~55 of wrapper and chat template,
+// and 32 reserved for the reply leaves ~3020 for the transcript.
 //
-// The per-line caps are deliberately unchanged, so the extra budget buys more
-// *events* rather than longer lines: a 200-char slice already identifies what
-// a message is about, and widening it would spend the increase on tool-result
-// prose, which is the least useful text in here.
-const TRANSCRIPT_MAX_CHARS = 3500;
-const TRANSCRIPT_MAX_LINES = 28;
+// Converted at 3.00 chars/token, measured with the summariser's own /tokenize
+// on representative rendered-transcript lines rather than assumed — file paths,
+// CLI flags and punctuation tokenize far denser than prose does (a prose-based
+// guess of ~3.75 would have undershot this budget by a fifth). Hence 9000.
+//
+// The remaining ~20% is real headroom, not padding: content that tokenizes
+// denser than 3.00 spends it. Below roughly 2.4 chars/token a maximal
+// transcript would exceed the slot, at which point the poll fails and the
+// status line is simply not updated — requestSummaryText swallows it.
+//
+// The line cap scales with the char budget so neither becomes the sole binding
+// constraint: on tool-heavy stretches lines render at ~40-80 chars and the line
+// cap binds first, on prose-heavy ones the char cap does. Keeping the ratio
+// means widening one doesn't quietly leave the other in charge.
+//
+// LINE_MAX_CHARS is deliberately NOT scaled: the extra budget should buy more
+// *events*, not longer lines. A 200-char slice already identifies what a
+// message is about, and raising it would spend the increase on tool-result
+// prose, the least useful text in here.
+//
+// WORTH RE-EXAMINING IF LABELS DEGRADE: this is now a transcript ~10x the
+// original, fed to a 2B. Memory is not the risk — attention is. The prompt is
+// built so the transcript is the last and most salient thing in the request,
+// but a window this wide can span two unrelated tasks, and the failure mode is
+// a confident label for the older one. If that shows up, cut this budget; do
+// not reach for the context size, which is not what's binding.
+const TRANSCRIPT_MAX_CHARS = 9000;
+const TRANSCRIPT_MAX_LINES = 72;
 const LINE_MAX_CHARS = 200;
 
 function collapse(text: string, limit = LINE_MAX_CHARS): string {
