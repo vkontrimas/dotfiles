@@ -102,9 +102,10 @@ Form examples (do not reuse the wording):
   transcript about reading settings -> Config file located, verifying settings`;
 
 // Budget for the rendered transcript. Applied to the rendered text rather than
-// to raw message objects, because that's what actually reaches the model —
-// a 50KB tool result renders to one capped line, so counting the raw message
-// would wildly over-charge it and drop useful earlier context.
+// to raw message objects, because that's what actually reaches the model: a
+// message that renders to nothing (a toolResult, now dropped entirely) or to
+// one capped line must not be charged for its raw size, or the window would
+// give up earlier context to pay for bytes it never sends.
 // Sized to fill ~80% of a slot, rather than to sit safely under it as before
 // (2000/16, then 3500/28). The summariser now runs --ctx-size 8192 with -np 2,
 // so a slot is 4096 tokens and the 80% target is ~3277 for the whole request.
@@ -160,12 +161,29 @@ function collapse(text: string, limit = LINE_MAX_CHARS): string {
   return flat.length > limit ? flat.slice(0, limit) + "…" : flat;
 }
 
-// Renders one message to zero or more transcript lines. Thinking blocks are
-// dropped (they're the model's scratch work, not what it's *doing*), images
-// become a placeholder rather than dragging base64 or the vision tower in.
+// Renders one message to zero or more transcript lines. Three kinds of content
+// are dropped outright:
+//
+//   - toolResult messages. The label describes what is being DONE, and the
+//     call already says that ("Read server-context.cpp"); the result is the
+//     output of doing it. It was also the worst content per char in here — log
+//     spew, file bodies, JSON — arriving in the position the model weights
+//     most heavily (nearest the end), which is precisely where noise does the
+//     most damage on a 2B. Dropping it means the window reaches back over
+//     roughly twice as many real actions for the same budget.
+//   - thinking blocks: the model's scratch work, not what it's doing.
+//   - image payloads, which become a placeholder rather than dragging base64
+//     or the vision tower into a status poll.
+//
+// The cost is real and worth stating: a task identified only by its result
+// ("the segfault is in parse_headers") no longer reaches the summariser, so
+// the label leans on the user's message and the tool calls to place the work.
+// That is the trade being made, not an oversight.
 function renderMessage(message: Message): string[] {
   const lines: string[] = [];
   const content = message.content;
+
+  if (message.role === "toolResult") return lines;
 
   if (typeof content === "string") {
     const text = collapse(content);
@@ -177,7 +195,7 @@ function renderMessage(message: Message): string[] {
     switch (block.type) {
       case "text": {
         const text = collapse(block.text);
-        if (text) lines.push(`[${message.role === "toolResult" ? "result" : message.role}] ${text}`);
+        if (text) lines.push(`[${message.role}] ${text}`);
         break;
       }
       case "toolCall": {
