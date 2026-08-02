@@ -81,25 +81,39 @@ const SUMMARY_MODEL_ID = "vllm/qwen3.5-2b-summariser";
 //      folding the previous summary in was meant to stop. Fixed by promoting
 //      it to a top-level rule here.
 //
-// Verified 2026-08-02 against Qwen3.5-2B-Q8_0: repeats verbatim on an
-// unchanged task (including when the transcript drifts to a different file),
-// writes a fresh label on a genuine task switch, works with no previous
-// label, and strips first-person/conversational bait
-// ("Let me see! I need to figure out why my parser is crashing. This is
-// getting complex." -> "Investigating parser crash").
+// The length rule and the examples have to move together. The examples were
+// 2-5 words while the rule said 5; raising the rule to 8 without lengthening
+// them would have left the strongest signal in the prompt arguing for the old
+// length, and on a model this example-suggestible the examples tend to win.
+// They now run 6-8 words each.
+//
+// Verified 2026-08-02 against Qwen3.5-2B-Q8_0, re-run after the 5 -> 8 change:
+// labels came back 3-7 words (the model does spend the extra room — it sat at
+// 2-5 under the old rule), none copied an example, none exceeded 47 chars, and
+// the guards still hold. Repeats verbatim on an unchanged task (including when
+// the transcript drifts to a different file), writes a fresh label on a
+// genuine task switch, works with no previous label, and strips
+// first-person/conversational bait ("Let me see! I need to figure out why my
+// parser is crashing. This is getting complex." -> "Investigating parser crash
+// in the request").
+//
+// 47 chars worst-observed is why SUMMARY_MAX_CHARS (80, in working-status)
+// was left alone: 8 words of ordinary prose lands near 55. A label naming
+// several long identifiers could still pass 80 and get an ellipsis, which is
+// the intended graceful failure, not a reason to widen the status line.
 const SUMMARY_SYSTEM_PROMPT = `You label an agent transcript with a status line.
 
 Rules:
-- 5 words or fewer, describing WHAT is being done.
+- 8 words or fewer, describing WHAT is being done.
 - Cold third-person fragment. No first-person (I, we, my, our).
 - No conversational text (Let me, Success!, Now I will). No greetings.
 - Output ONLY the label. Never copy the examples below; they show FORM only.
 - If a PREVIOUS LABEL is given and the transcript is still the same broad task, output that previous label character-for-character. Only write a new label if the task genuinely changed.
 
 Form examples (do not reuse the wording):
-  transcript about a segfault -> Investigating segfault
-  transcript about missing exports -> Investigating missing functions
-  transcript about reading settings -> Config file located, verifying settings`;
+  transcript about a segfault -> Investigating segfault in the request parser
+  transcript about missing exports -> Tracing missing exports through the build config
+  transcript about reading settings -> Config file located, verifying the retry settings`;
 
 // Budget for the rendered transcript. Applied to the rendered text rather than
 // to raw message objects, because that's what actually reaches the model: a
