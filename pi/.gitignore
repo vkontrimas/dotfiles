@@ -2,6 +2,7 @@ agent/auth.json
 agent/trust.json
 agent/sessions/
 agent/npm/
+agent/git/
 agent/models-store.json
 agent/*.jsonl
 agent/extensions/seqagent/llama-cache-fix-state.json

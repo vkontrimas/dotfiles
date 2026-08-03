@@ -4,8 +4,8 @@
   "defaultModel": "vllm/qwen3.6-27b-q5km-mtp",
   "packages": [
     "npm:@juicesharp/rpiv-web-tools",
-    "npm:@marcfargas/pi-heartbeat",
-    "npm:pi-ask-user"
+    "git:github.com/vkontrimas/pi-heartbeat@d364427a87da9436e6c4e0a4e89732dceba99daa",
+    "git:github.com/vkontrimas/pi-ask-user@c5dedfd"
   ],
   "httpIdleTimeoutMs": 1200000,
   "retry": {
