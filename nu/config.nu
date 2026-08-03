@@ -129,7 +129,7 @@ alias fcd = cd (fd -t d | fzf)
 
 $env.config.hooks.env_change.PWD = (
     $env.config.hooks.env_change.PWD? | append {
-        code: {|| $"($env.PWD)\n" | save --append ($nu.data-dir | path join "hcd_history.txt")}
+        code: {|| try { $"($env.PWD)\n" | save --append ($nu.data-dir | path join "hcd_history.txt") } }
     }
 )
 
