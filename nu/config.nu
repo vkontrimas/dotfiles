@@ -178,3 +178,5 @@ def watch-nvidia-smi [] {
         sleep 1sec
     }
 }
+
+$env.PATH = $env.PATH | prepend '/usr/local/bin' | prepend '~/.local/bin'
