@@ -29,14 +29,22 @@
  * Before any of that, `/plan` also decides what to do with a task list left
  * over from a previous plan (see `maybeClearStaleTasks` below) — a fully
  * finished list is cleared automatically, a partial one is either confirmed
- * or left alone depending on what's available. This is a soft dependency on
- * two other extensions, done with real imports/APIs rather than string-based
- * detection:
- *   - `pi-tasks` (the `tasks` extension) is a local, first-party package —
- *     declared as an `optionalDependency` in package.json (`file:../tasks`)
- *     and imported directly via a dynamic `import("pi-tasks")` at module
- *     load. If it's not linked/installed, `tasksApi` stays `null` and this
- *     whole feature is skipped, no `/plan` behavior changes.
+ * or left alone depending on what's available. This talks to two other
+ * extensions, neither via a regular import:
+ *   - `pi-tasks` (the `tasks` extension) is a local, first-party package,
+ *     but pi's extension loader gives each extension its own jiti instance
+ *     with moduleCache disabled — a sibling extension's `import("pi-tasks")`
+ *     would re-evaluate that file from scratch in an isolated instance whose
+ *     module-scope `tasks` array is never touched by the real one the
+ *     model's tool calls go through. A `getTaskCounts()` reached that way
+ *     always reads 0/0 and a `clearAllTasks()` always no-ops (its `piRef` is
+ *     never set). So instead this listens on `pi.events` for the
+ *     `"tasks:updated"` counts the tasks extension already pushes on every
+ *     mutation (same channel `working-status` uses), and clears by emitting
+ *     `"tasks:clear-request"`, which the tasks extension's own instance
+ *     handles with its real state. `pi.events` is core-owned — a single bus
+ *     handed to every extension's `pi` — so it's the one channel that
+ *     actually crosses the extension boundary.
  *   - `pi-ask-user` (the `ask_user` tool) is a vendored third-party npm
  *     package with no exports at all — nothing beyond its default Pi-loader
  *     factory function is importable without forking it. So instead of
@@ -45,7 +53,8 @@
  *     `@earendil-works/pi-coding-agent` SDK primitive `ask_user` itself is
  *     built on — gated on `pi.getActiveTools().includes("ask_user")` as a
  *     presence signal for whether the user wants this kind of interactive
- *     prompt at all.
+ *     prompt at all. The same presence-signal idiom gates the tasks feature
+ *     too, via `pi.getActiveTools().includes("add_tasks")`.
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -57,30 +66,27 @@ import { readFileSync } from "fs";
 import { join } from "path";
 import { platform } from "os";
 
-// Soft dependency on the local `pi-tasks` extension — see the module-level
-// comment above. A dynamic import (not a static one) so a missing/unlinked
-// package degrades to `null` instead of throwing at module load and taking
-// this whole extension down with it.
-let tasksApi: typeof import("pi-tasks") | null = null;
-try {
-	tasksApi = await import("pi-tasks");
-} catch {
-	tasksApi = null;
-}
+// Live counts from the tasks extension's own instance, kept in sync via the
+// shared `pi.events` bus — see the module-level comment above for why this
+// isn't a direct `import("pi-tasks")` call. Updated as soon as `/plan` (and
+// every other extension) is loaded, and again on every tasks mutation, so by
+// the time a user can type `/plan` the tasks extension has already pushed at
+// least one `"tasks:updated"` (from its own `session_start` handler).
+let taskCounts = { total: 0, remaining: 0 };
 
 // Decides what to do with a task list left over from a previous plan, before
 // a new one starts. Never blocks `/plan` itself — it only decides whether to
 // clear, ask, or leave the list alone first.
 async function maybeClearStaleTasks(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
-	if (!tasksApi) return;
+	if (!pi.getActiveTools().includes("add_tasks")) return;
 
-	const { total, remaining } = tasksApi.getTaskCounts();
+	const { total, remaining } = taskCounts;
 	if (total === 0) return;
 
 	if (remaining === 0) {
 		// Fully done (or cancelled) — nothing a user would want to review, so
 		// this is the one case that's silent and automatic.
-		tasksApi.clearAllTasks(ctx);
+		pi.events.emit("tasks:clear-request", ctx);
 		return;
 	}
 
@@ -89,7 +95,7 @@ async function maybeClearStaleTasks(pi: ExtensionAPI, ctx: ExtensionContext): Pr
 			"Pending tasks",
 			`${remaining} task${remaining === 1 ? "" : "s"} still pending from a previous list. Clear them before starting this plan?`,
 		);
-		if (shouldClear) tasksApi.clearAllTasks(ctx);
+		if (shouldClear) pi.events.emit("tasks:clear-request", ctx);
 		return;
 	}
 
@@ -172,6 +178,10 @@ interface PlanBannerData {
 // --- Extension ---
 
 export default function (pi: ExtensionAPI): void {
+	pi.events.on("tasks:updated", (data) => {
+		taskCounts = data as { total: number; remaining: number };
+	});
+
 	// Register renderer for plan banner (visible in chat, hidden from tree)
 	pi.registerEntryRenderer<PlanBannerData>("plan-banner", (entry, _options, theme) => {
 		const data = entry.data ?? { content: "" };

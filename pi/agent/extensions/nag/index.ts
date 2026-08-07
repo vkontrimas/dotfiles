@@ -181,9 +181,10 @@ function pickTrigger(text: string): string {
 // Importing a sibling extension does NOT share live state — pi's loader gives
 // each extension its own jiti instance with moduleCache:false, so `import
 // ("pi-tasks")` re-evaluates the file into an isolated copy where tasks is
-// always []. (plan/index.ts has this bug today.) The `tasks:updated` event only
-// carries counts. The session entry is the one source with the actual list, and
-// it is what tasks itself replays from on restore.
+// always []. (plan/index.ts had this bug; it now uses `pi.events` instead —
+// see that file's header comment.) The `tasks:updated` event only carries
+// counts. The session entry is the one source with the actual list, and it
+// is what tasks itself replays from on restore.
 function readOpenTasks(ctx: ExtensionContext): Task[] {
 	try {
 		let snapshot: { tasks: Task[] } | undefined;

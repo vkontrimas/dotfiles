@@ -240,9 +240,11 @@ const REMINDER_EVERY_N_TURNS = 5;
 const MAX_STALLED_CONTINUES = 3;
 
 // Module-scope state (rather than closed over inside the default-exported
-// function) so `getTaskCounts`/`clearAllTasks` below can be imported and
-// called directly by other extensions (e.g. `plan`) and see/affect the same
-// live list — not a second, independent instance's empty state.
+// function) so `clearAllTasks` below, called from this file's own
+// `"tasks:clear-request"` listener (registered on the real, running
+// instance), affects the actual live list. It is NOT reachable this way from
+// another extension's own `import("pi-tasks")` — see the comment on
+// `updateStatus` below for why that lands in a separate, empty instance.
 let tasks: Task[] = [];
 let nextId = 1;
 let turnsSinceReminder = 0;
@@ -262,9 +264,9 @@ let piRef: ExtensionAPI | null = null;
 // it continuously for zero context. Cleared when no list is active.
 //
 // Also pushes the same counts on the shared event bus (`tasks:updated`) for
-// other extensions (e.g. `working-status`) to consume live, and persists a
-// full `{ tasks, nextId }` snapshot as a custom session entry so reload/
-// resume/`/tree` can restore state by reading the last snapshot instead of
+// other extensions (e.g. `working-status`, `plan`) to consume live, and
+// persists a full `{ tasks, nextId }` snapshot as a custom session entry so
+// reload/resume/`/tree` can restore state by reading the last snapshot instead of
 // replaying every historical add_tasks/complete_task/cancel_task result (see
 // reconstructTasks below). Neither is the same as importing this module: pi's
 // extension loader gives each extension its own jiti instance with
@@ -282,12 +284,6 @@ function updateStatus(ctx: ExtensionContext): void {
 	}
 	const done = tasks.length - tasks.filter(isOpen).length;
 	ctx.ui.setStatus("tasks", `tasks ${done}/${tasks.length}`);
-}
-
-// Current open/total counts — for other extensions (e.g. `plan`) deciding
-// whether a list needs clearing before starting new work.
-export function getTaskCounts(): { total: number; remaining: number } {
-	return { total: tasks.length, remaining: tasks.filter(isOpen).length };
 }
 
 // Clears the list exactly like the `/tasks-clear` command does — same reset,
@@ -408,6 +404,16 @@ export default function (pi: ExtensionAPI): void {
 
 	pi.on("session_start", async (_event, ctx) => reconstructTasks(ctx));
 	pi.on("session_tree", async (_event, ctx) => reconstructTasks(ctx));
+
+	// Lets other extensions (e.g. `plan`'s stale-list check before `/plan`)
+	// request a clear without a same-process `import("pi-tasks")` — which
+	// would land in jiti's own isolated module instance instead of this real
+	// one. `pi.events` is core-owned and shared, so the request reaches this
+	// handler, which has the real `piRef`/`tasks` this extension is actually
+	// mutating.
+	pi.events.on("tasks:clear-request", (data) => {
+		clearAllTasks(data as ExtensionContext);
+	});
 
 	// Renderer for the /tasks banner (visible in chat, hidden from tree, never sent to the LLM).
 	// A checklist is rendered here rather than inlined into `content` as markdown,

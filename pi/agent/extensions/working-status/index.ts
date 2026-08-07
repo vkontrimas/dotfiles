@@ -9,14 +9,15 @@
  * `tasks:updated`, pushed by `tasks/index.ts` whenever its list changes.
  * This is not the same as importing the `tasks` extension's module —
  * that path was tried first (an optionalDependency + `await import("pi-tasks")`,
- * mirroring `plan/index.ts`'s soft-dependency pattern) but doesn't work:
- * pi's extension loader (`core/extensions/loader.js`) creates a fresh jiti
- * instance per extension with `moduleCache: false`, so a sibling extension's
- * dynamic import re-evaluates that module from scratch in an isolated
- * instance — mutations from the real `tasks` extension's tool calls are
- * invisible to it. `pi.events` doesn't have that problem: it's a single bus
- * owned by pi's core runtime and handed to every extension's `pi`, not
- * something each extension's own module recreates.
+ * originally mirroring `plan/index.ts`'s soft-dependency pattern) but doesn't
+ * work: pi's extension loader (`core/extensions/loader.js`) creates a fresh
+ * jiti instance per extension with `moduleCache: false`, so a sibling
+ * extension's dynamic import re-evaluates that module from scratch in an
+ * isolated instance — mutations from the real `tasks` extension's tool calls
+ * are invisible to it. `pi.events` doesn't have that problem: it's a single
+ * bus owned by pi's core runtime and handed to every extension's `pi`, not
+ * something each extension's own module recreates. (`plan/index.ts` has
+ * since switched to this same event-bus pattern.)
  *
  * The summary segment reuses the ephemeral side-channel completion pattern
  * from `seqagent/index.ts` — both now share the actual prompt/complete()
