@@ -179,10 +179,13 @@ services:
       # request size, because a hybrid recurrent slot can't be rolled back
       # cheaply. Only moving it off this server actually fixed it.
       #
-      # Left at 16384: with the checkpoint cap below an entry is ~3.4GB, and
-      # this server now serves one conversation at a time, so it holds several
-      # comfortably. Box has 46GB RAM but only ~24GB available with 5GB of swap
-      # already in use, so there's no headroom to solve anything by raising it.
+      # Left at 16384: with the checkpoint cap below (raised 4 -> 8 on
+      # 2026-08-07) an entry runs ~6.4GB at the far end of a 200K-token
+      # conversation (was ~3.4GB at -ctxcp 4), so this now holds ~2
+      # comfortably rather than "several" — still fine since this server
+      # serves one conversation at a time. Box has 46GB RAM but only ~24GB
+      # available with 5GB of swap already in use, so there's no headroom to
+      # solve anything by raising it further.
       - --cache-ram
       - "16384"
       # Context checkpoints are how a slot rolls back to an earlier position.
@@ -193,13 +196,25 @@ services:
       #
       # But the default 32 is sized for cheap SWA-window checkpoints
       # (ggml-org/llama.cpp#15293, where this was --swa-checkpoints); on a
-      # hybrid model each one is a full recurrent-state snapshot at ~480 MiB.
-      # At the default --checkpoint-min-step 8192 a 100K conversation
-      # accumulates ~12 of them, ~5.6GB — the bulk of every cache entry, and
-      # the reason entries grew ~740MB while the conversation grew only 4K
-      # tokens (98,645 -> 102,522: a checkpoint boundary, not per-token
-      # growth). 4 keeps enough rollback granularity for the branch depths
-      # actually seen here while cutting the tail ~3x.
+      # hybrid model each checkpoint's cost grows with position instead of
+      # being fixed. Measured directly from this server's own "erasing old
+      # context checkpoint" log lines (size vs pos_min across many samples):
+      # size ~= 149.6 MiB + 3.9 KiB/token. At --checkpoint-min-step 8192,
+      # checkpoints land every ~8192 tokens, so N of them cover a rollback
+      # window of N*8192 tokens counting back from wherever the conversation
+      # currently is.
+      #
+      # 4 (original setting) covers only the last ~32K tokens of rollback —
+      # too short given real conversations here run 200-206K tokens, so
+      # branching/editing further back than that forced a full reprefill
+      # more often than desired (found 2026-08-07). Raised to 8: ~65K-token
+      # window, at a RAM cost (for a checkpoint queue at the far end of a
+      # ~200K-token conversation) of ~6.4GB vs ~3.5GB at 4 — the box has
+      # ~22GB "available" per `free -h` plus zram swap (cheap, compressed
+      # RAM, not disk), so the extra ~3GB has headroom. 12 and 16 were
+      # considered (~8.9GB / ~10.8GB respectively, ~98K/~131K-token windows)
+      # but 8 was picked as the cheaper fix; revisit upward if reprefills
+      # still show up beyond a 65K-token branch depth.
       #
       # NOT related to the upstream hybrid checkpoint bugs (#24055, #20225,
       # #19794) where checkpoints are always invalidated — this server logs
@@ -207,7 +222,7 @@ services:
       # re-processing due to lack of cache data" lines. Worth re-grepping for
       # those before blaming this flag if reprefills reappear.
       - -ctxcp
-      - "4"
+      - "8"
       # Unlocks POST /slots/{id}?action=erase (confirmed: without this flag
       # the endpoint 501s). Used by seqagent's erase-on-subagent-exit fix
       # (pi/agent/extensions/seqagent/index.ts, toggle via
