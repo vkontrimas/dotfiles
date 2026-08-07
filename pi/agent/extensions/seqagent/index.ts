@@ -83,6 +83,28 @@ async function saveCacheFixState(enabled: boolean): Promise<void> {
 // seqagent's orchestration — swallows an offline/unreachable server, a
 // timeout, or a non-2xx response (e.g. if --slot-save-path isn't set)
 // silently, since this is a best-effort optimization, not a required step.
+//
+// GOTCHA (found 2026-08-07): POST /slots/{id}?action=erase erases by numeric
+// slot id only — it never checks whose content is in there. Worse, if the
+// slot is still `is_processing()` when llama.cpp's task queue dequeues the
+// erase, it doesn't fail — server-context.cpp defers the task and fires it
+// later, against whatever occupies the slot at its *next* release, with no
+// re-validation (server-queue.cpp's pop_deferred_task matches by slot id
+// alone). Our own LLAMA_ERASE_TIMEOUT_MS abort on the client side doesn't
+// cancel that server-side task — it just stops us waiting for it. So a
+// straggling erase (GPU/MTP tail latency, anything that briefly extends
+// is_processing() past when the subagent's own process exits) can sit
+// server-side and land on the PARENT's own next turn once it finishes
+// generating, wiping the live slot before --cache-idle-slots' handoff-
+// snapshot ever gets a look at it — a full reprefill on the very next
+// message, with nothing in the parent's logs pointing back here.
+//
+// Mitigated (not fully closed — TOCTOU remains between this GET and the
+// POST below, just narrowed to one round trip instead of "whenever the
+// slot next happens to release") by checking /slots first and skipping the
+// erase outright if slot 0 is already busy: that means something else
+// already has it, almost certainly the parent, and erasing at that point
+// would be actively harmful rather than a no-op.
 async function eraseSubagentSlot(model: string | undefined): Promise<void> {
   if (!cacheFixEnabled) return;
   if (process.env.SEQAGENT_SUBAGENT === "1") return; // only the parent process does this
@@ -91,6 +113,15 @@ async function eraseSubagentSlot(model: string | undefined): Promise<void> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), LLAMA_ERASE_TIMEOUT_MS);
   try {
+    const slotsRes = await fetch(`${LLAMA_SLOT_BASE_URL}/slots`, { signal: controller.signal });
+    if (slotsRes.ok) {
+      const slots = (await slotsRes.json()) as Array<{ id: number; is_processing?: boolean }>;
+      const slot = slots.find((s) => s.id === LLAMA_SLOT_ID);
+      if (slot?.is_processing) {
+        if (process.env.SEQAGENT_DEBUG_ERASE) console.error(`[seqagent] skipping erase: slot ${LLAMA_SLOT_ID} is busy — not our content anymore`);
+        return;
+      }
+    }
     const res = await fetch(`${LLAMA_SLOT_BASE_URL}/slots/${LLAMA_SLOT_ID}?action=erase`, {
       method: "POST",
       signal: controller.signal,
