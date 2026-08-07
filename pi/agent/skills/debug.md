@@ -5,14 +5,20 @@ description: Diagnose and fix a bug — reproduce, isolate, confirm root cause, 
 
 **Debug Mode**
 
-Confirm the root cause before touching code — a fix that isn't traced to a cause is a guess.
+Confirm root cause before touching code. Unconfirmed = guess.
 
-1. **Reproduce**: Get it failing reliably. Can't reproduce it? Say so and ask for more detail instead of guessing.
-2. **Isolate**: Narrow to a specific file/function/line — bisect input, code path, or commits (`git log`, `git bisect`, `git blame`).
-3. **Hypothesize and test**: Form a theory, confirm it against the code that actually executes (read it, log it, or repro it) before trusting it. Unfamiliar or large codebase? Delegate to `seqagent` agent `investigate`. Two theories dead, or you're re-applying the same fix? Delegate too — you're anchored; a fresh context isn't.
+1. **Reproduce**: Fail reliably. Can't? Ask for detail — don't guess.
+
+2. **Isolate**: Narrow to file:function:line. Bisect input, code path, or commits (`git log`, `git bisect`, `git blame`).
+
+3. **Hypothesize and test**: Form a theory, confirm it against the executing code — read it, log it, repro it. Unfamiliar or large codebase? Delegate to `seqagent` agent `investigate`. Two theories dead or re-applying the same fix? Delegate — you're anchored.
+
 4. **Confirm root cause**: State it with evidence. Unconfirmed? Back to step 3.
-5. **Fix**: The minimal change for the confirmed cause — no refactor, no defensive catch-all.
-6. **Verify**: Add a regression test that encodes the reproduction from step 1 and run it plus the existing suite, or exercise the surrounding behavior manually if no test framework fits.
-7. **Report**: Root cause, fix (file:line), what you ran to verify.
 
-Single bug, well-scoped: no need for `add_tasks`. Reach for it only across several bugs or a fix large enough to lose track of.
+5. **Fix**: Minimal change for the confirmed cause. No refactor, no defensive catch-all.
+
+6. **Verify**: Regression test from step 1's reproduction + existing suite. Or manual exercise if no test framework fits.
+
+7. **Report**: Root cause, fix (`file:line`), what you ran.
+
+Single bug, well-scoped: no `add_tasks`. Use it only across several bugs or a fix large enough to lose track of.
