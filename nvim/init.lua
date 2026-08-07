@@ -38,6 +38,7 @@ vim.opt.textwidth = 0 -- no hard wrap
 vim.opt.wrap = true
 vim.opt.linebreak = true -- wrap at word boundaries, not mid-word
 vim.opt.breakindent = true -- wrapped lines keep the indent of the original
+vim.opt.colorcolumn = "120" -- visual wrap guide
 -- vim.opt.wrapmargin = 200
 
 vim.opt.number = true
