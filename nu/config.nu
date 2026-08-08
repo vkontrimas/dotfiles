@@ -180,3 +180,7 @@ def watch-nvidia-smi [] {
 }
 
 $env.PATH = $env.PATH | prepend '/usr/local/bin' | prepend '~/.local/bin'
+
+if $nu.os-info.name == 'linux' {
+    $env.PATH = $env.PATH | prepend '/home/kinetic/titan/_bin/'
+}
