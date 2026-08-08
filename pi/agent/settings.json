@@ -4,7 +4,7 @@
   "defaultModel": "vllm/qwen3.6-27b-q5km-mtp",
   "packages": [
     "npm:@juicesharp/rpiv-web-tools",
-    "git:github.com/vkontrimas/pi-ask-user@c5dedfd"
+    "git:github.com/vkontrimas/pi-ask-user@c5dedfd16eb21aff19fe51cfc6b92a469cff625b"
   ],
   "httpIdleTimeoutMs": 1200000,
   "retry": {
